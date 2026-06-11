@@ -5,19 +5,19 @@ const state = {
   mode: "login",
   token: sessionStorage.getItem(SESSION_TOKEN_KEY) || "",
   user: readStoredUser(),
+  rooms: [],
+  activeRoom: null,
   socket: null,
-  roomId: "demo",
 };
 
 const $ = (selector) => document.querySelector(selector);
 const authForm = $("#auth-form");
-const messageForm = $("#message-form");
 const roomForm = $("#room-form");
+const messageForm = $("#message-form");
 const messages = $("#messages");
 const messageInput = $("#message-input");
 const sendButton = $("#send-button");
 const socketStatus = $("#socket-status");
-const authStatus = $("#auth-status");
 
 function readStoredUser() {
   const storedUser = sessionStorage.getItem(SESSION_USER_KEY);
@@ -41,6 +41,22 @@ function wsUrl(roomId, token) {
   return `${protocol}//${window.location.host}/ws?${params}`;
 }
 
+function authHeaders(extraHeaders = {}) {
+  return {
+    ...extraHeaders,
+    Authorization: `Bearer ${state.token}`,
+  };
+}
+
+async function apiRequest(path, options = {}) {
+  const response = await fetch(apiUrl(path), options);
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || "Request failed");
+  }
+  return payload;
+}
+
 function setStatus(element, label, variant = "") {
   element.textContent = label;
   element.className = `status-pill ${variant}`.trim();
@@ -51,7 +67,7 @@ function showToast(message, type = "success") {
   toast.className = `toast ${type}`;
   toast.textContent = message;
   $("#toast-region").append(toast);
-  window.setTimeout(() => toast.remove(), 4200);
+  window.setTimeout(() => toast.remove(), 3600);
 }
 
 function saveSession(payload) {
@@ -59,28 +75,35 @@ function saveSession(payload) {
   state.user = payload.user;
   sessionStorage.setItem(SESSION_TOKEN_KEY, payload.token);
   sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(payload.user));
-  renderUser();
+  renderSession();
+  loadRooms();
 }
 
 function clearSession() {
   disconnectSocket();
   state.token = "";
   state.user = null;
+  state.rooms = [];
+  state.activeRoom = null;
   sessionStorage.removeItem(SESSION_TOKEN_KEY);
   sessionStorage.removeItem(SESSION_USER_KEY);
-  renderUser();
+  renderSession();
 }
 
-function renderUser() {
+function renderSession() {
   const loggedIn = Boolean(state.token && state.user);
-  $("#user-card").classList.toggle("hidden", !loggedIn);
-  setStatus(authStatus, loggedIn ? "Online" : "Offline", loggedIn ? "online" : "");
+  $("#auth-screen").classList.toggle("hidden", loggedIn);
+  $("#app-screen").classList.toggle("hidden", !loggedIn);
 
-  if (loggedIn) {
-    $("#user-name").textContent = state.user.display_name;
-    $("#user-phone").textContent = state.user.phone;
-    $("#avatar").textContent = state.user.display_name.slice(0, 1).toUpperCase();
+  if (!loggedIn) {
+    renderRooms();
+    showChatPlaceholder();
+    return;
   }
+
+  $("#user-name").textContent = state.user.display_name;
+  $("#user-phone").textContent = state.user.phone;
+  $("#avatar").textContent = state.user.display_name.slice(0, 1).toUpperCase();
 }
 
 function renderMode() {
@@ -104,15 +127,11 @@ async function authenticate(event) {
 
   try {
     $("#auth-submit").disabled = true;
-    const response = await fetch(apiUrl(endpoint), {
+    const payload = await apiRequest(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload.error || "Authentication failed");
-    }
     saveSession(payload);
     showToast(state.mode === "register" ? "Account created." : "Welcome back.");
   } catch (error) {
@@ -122,30 +141,112 @@ async function authenticate(event) {
   }
 }
 
-function connectSocket(roomId) {
+async function loadRooms() {
+  if (!state.token) return;
+
+  try {
+    state.rooms = await apiRequest("/rooms", {
+      headers: authHeaders(),
+    });
+    renderRooms();
+  } catch (error) {
+    showToast(error.message, "error");
+    if (error.message === "authentication failed") {
+      clearSession();
+    }
+  }
+}
+
+async function createRoom(event) {
+  event.preventDefault();
+  const nameInput = $("#room-name");
+  const name = nameInput.value.trim();
+  if (!name) return;
+
+  try {
+    $("#create-room-button").disabled = true;
+    const room = await apiRequest("/rooms", {
+      method: "POST",
+      headers: authHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ name }),
+    });
+    nameInput.value = "";
+    state.rooms = [room, ...state.rooms.filter((existing) => existing.id !== room.id)];
+    renderRooms();
+    connectRoom(room);
+    showToast("Room created.");
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    $("#create-room-button").disabled = false;
+  }
+}
+
+function renderRooms() {
+  const list = $("#room-list");
+  list.replaceChildren();
+
+  if (!state.rooms.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = state.token ? "No rooms yet. Create one to begin." : "Login to view rooms.";
+    list.append(empty);
+    return;
+  }
+
+  state.rooms.forEach((room) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `room-item ${state.activeRoom?.id === room.id ? "active" : ""}`.trim();
+    button.dataset.roomId = room.id;
+
+    const name = document.createElement("strong");
+    name.textContent = room.name;
+    const meta = document.createElement("span");
+    meta.textContent = new Date(room.created_at).toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    button.append(name, meta);
+    button.addEventListener("click", () => connectRoom(room));
+    list.append(button);
+  });
+}
+
+function showChatPlaceholder() {
+  $("#chat-placeholder").classList.remove("hidden");
+  $("#chat-area").classList.add("hidden");
+  messages.replaceChildren();
+  setStatus(socketStatus, "Disconnected");
+  messageInput.disabled = true;
+  sendButton.disabled = true;
+}
+
+function connectRoom(room) {
   if (!state.token) {
     showToast("Login before connecting to a room.", "error");
     return;
   }
-  const nextRoomId = roomId.trim();
-  if (!nextRoomId) {
-    showToast("Enter a room ID before connecting.", "error");
-    return;
-  }
 
   disconnectSocket();
-  state.roomId = nextRoomId;
-  $("#room-title").textContent = state.roomId;
+  state.activeRoom = room;
+  renderRooms();
+  $("#chat-placeholder").classList.add("hidden");
+  $("#chat-area").classList.remove("hidden");
+  $("#room-title").textContent = room.name;
+  messages.replaceChildren();
   setStatus(socketStatus, "Connecting", "connecting");
 
-  const socket = new WebSocket(wsUrl(state.roomId, state.token));
+  const socket = new WebSocket(wsUrl(room.id, state.token));
   state.socket = socket;
 
   socket.addEventListener("open", () => {
     setStatus(socketStatus, "Connected", "online");
     messageInput.disabled = false;
     sendButton.disabled = false;
-    showToast(`Connected to #${state.roomId}.`);
+    messageInput.focus();
   });
 
   socket.addEventListener("message", (event) => {
@@ -183,13 +284,10 @@ function disconnectSocket() {
   }
   messageInput.disabled = true;
   sendButton.disabled = true;
-  setStatus(socketStatus, "Disconnected");
+  if (socketStatus) setStatus(socketStatus, "Disconnected");
 }
 
 function appendMessage(event) {
-  const emptyState = messages.querySelector(".empty-state");
-  if (emptyState) emptyState.remove();
-
   const mine = state.user && event.sender_id === state.user.id;
   const message = document.createElement("article");
   message.className = `message ${mine ? "mine" : ""}`.trim();
@@ -229,12 +327,13 @@ document.querySelectorAll(".tab").forEach((tab) => {
 });
 
 authForm.addEventListener("submit", authenticate);
+roomForm.addEventListener("submit", createRoom);
 messageForm.addEventListener("submit", sendMessage);
-roomForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  connectSocket($("#room-id").value);
-});
+$("#refresh-rooms-button").addEventListener("click", loadRooms);
 $("#logout-button").addEventListener("click", clearSession);
 
 renderMode();
-renderUser();
+renderSession();
+if (state.token && state.user) {
+  loadRooms();
+}

@@ -2,6 +2,7 @@ mod app;
 mod auth;
 mod config;
 mod error;
+mod rooms;
 mod security;
 mod state;
 mod users;

@@ -9,38 +9,15 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="hero-card" aria-labelledby="app-title">
-        <div class="brand-row">
-          <div class="brand-mark" aria-hidden="true">SC</div>
-          <div>
-            <p class="eyebrow">Secure Chat</p>
-            <h1 id="app-title">Private rooms, instant messages.</h1>
-          </div>
-        </div>
-        <p class="hero-copy">
-          A polished dark-mode frontend for the Rust chat backend. Create an account,
-          join any room, and test realtime WebSocket messaging in seconds.
-        </p>
-        <div class="trust-grid" aria-label="Security highlights">
-          <span>JWT sessions</span>
-          <span>Argon2 passwords</span>
-          <span>Realtime WebSockets</span>
-        </div>
-      </section>
-
-      <section class="workspace" aria-label="Chat workspace">
-        <div class="panel auth-panel">
-          <div class="panel-header">
-            <div>
-              <p class="eyebrow">Account</p>
-              <h2>Sign in or register</h2>
-            </div>
-            <span class="status-pill" id="auth-status">Offline</span>
-          </div>
+      <section class="auth-screen" id="auth-screen" aria-labelledby="auth-title">
+        <div class="card auth-card">
+          <p class="eyebrow">Secure Chat</p>
+          <h1 id="auth-title">Login or sign up</h1>
+          <p class="muted">Create an account, then make a room and start chatting.</p>
 
           <div class="tabs" role="tablist" aria-label="Authentication mode">
             <button class="tab active" type="button" data-mode="login" role="tab" aria-selected="true">Login</button>
-            <button class="tab" type="button" data-mode="register" role="tab" aria-selected="false">Register</button>
+            <button class="tab" type="button" data-mode="register" role="tab" aria-selected="false">Sign up</button>
           </div>
 
           <form id="auth-form" class="stacked-form">
@@ -58,51 +35,76 @@
             </label>
             <button class="primary-button" type="submit" id="auth-submit">Login</button>
           </form>
+        </div>
+      </section>
 
-          <div class="user-card hidden" id="user-card">
-            <div class="avatar" id="avatar">U</div>
-            <div>
-              <strong id="user-name">User</strong>
-              <span id="user-phone">+10000000000</span>
+      <section class="app-screen hidden" id="app-screen" aria-label="Chat workspace">
+        <header class="topbar card">
+          <div>
+            <p class="eyebrow">Rooms</p>
+            <h1>Chat rooms</h1>
+          </div>
+          <div class="user-actions">
+            <div class="user-chip">
+              <span class="avatar" id="avatar">U</span>
+              <div>
+                <strong id="user-name">User</strong>
+                <span id="user-phone">+10000000000</span>
+              </div>
             </div>
             <button class="ghost-button" type="button" id="logout-button">Logout</button>
           </div>
-        </div>
+        </header>
 
-        <div class="panel chat-panel">
-          <div class="panel-header chat-header">
-            <div>
-              <p class="eyebrow">Room</p>
-              <h2 id="room-title">demo</h2>
+        <div class="workspace">
+          <aside class="card rooms-panel">
+            <div class="section-header">
+              <h2>Your rooms</h2>
+              <button class="ghost-button small" type="button" id="refresh-rooms-button">Refresh</button>
             </div>
-            <span class="status-pill" id="socket-status">Disconnected</span>
-          </div>
 
-          <form id="room-form" class="room-form">
-            <label>
-              Room ID
-              <input id="room-id" type="text" value="demo" maxlength="128" required />
-            </label>
-            <button class="secondary-button" type="submit" id="connect-button">Connect</button>
-          </form>
+            <form id="room-form" class="room-form">
+              <label>
+                New room name
+                <input id="room-name" type="text" maxlength="80" placeholder="Family chat" required />
+              </label>
+              <button class="secondary-button" type="submit" id="create-room-button">Create room</button>
+            </form>
 
-          <div class="messages" id="messages" role="log" aria-live="polite">
-            <div class="empty-state">
+            <div class="room-list" id="room-list" aria-live="polite">
+              <div class="empty-state">No rooms yet. Create one to begin.</div>
+            </div>
+          </aside>
+
+          <section class="card chat-panel" aria-labelledby="room-title">
+            <div class="chat-placeholder" id="chat-placeholder">
               <div class="empty-icon" aria-hidden="true">💬</div>
-              <strong>No messages yet</strong>
-              <span>Login, connect to a room, and say hello.</span>
+              <h2>Select or create a room</h2>
+              <p class="muted">Messages appear after you connect to a room.</p>
             </div>
-          </div>
 
-          <form id="message-form" class="message-form">
-            <input id="message-input" type="text" maxlength="4096" placeholder="Write a message..." autocomplete="off" disabled />
-            <button class="primary-button" type="submit" id="send-button" disabled>Send</button>
-          </form>
+            <div class="chat-area hidden" id="chat-area">
+              <div class="section-header chat-header">
+                <div>
+                  <p class="eyebrow">Active room</p>
+                  <h2 id="room-title">Room</h2>
+                </div>
+                <span class="status-pill" id="socket-status">Disconnected</span>
+              </div>
+
+              <div class="messages" id="messages" role="log" aria-live="polite"></div>
+
+              <form id="message-form" class="message-form">
+                <input id="message-input" type="text" maxlength="4096" placeholder="Write a message..." autocomplete="off" disabled />
+                <button class="primary-button" type="submit" id="send-button" disabled>Send</button>
+              </form>
+            </div>
+          </section>
         </div>
       </section>
     </main>
 
-    <div class="toast-region" id="toast-region" aria-live="assertive" aria-atomic="true"></div>
-    <script src="./app.js" defer></script>
+    <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <script src="./app.js" type="module"></script>
   </body>
 </html>

@@ -1,4 +1,4 @@
-use crate::{auth, config::Config, security, state::AppState, ws};
+use crate::{auth, config::Config, rooms, security, state::AppState, ws};
 use axum::{
     Json, Router,
     routing::{get, post},
@@ -22,6 +22,7 @@ pub fn build_router(config: Config) -> Router {
         .route("/health", get(health))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
+        .route("/rooms", get(rooms::list).post(rooms::create))
         .route("/me", get(me))
         .route("/ws", get(ws::handler))
         .fallback_service(ServeDir::new(frontend_dir))

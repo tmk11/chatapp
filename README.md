@@ -20,7 +20,7 @@ cp .env.example .env
 cargo run
 ```
 
-Then open `http://127.0.0.1:8080/`, register or login with a phone number in E.164 format, choose a room ID, and start chatting. The frontend uses the same `/auth/*`, `/me`, and `/ws` backend endpoints.
+Then open `http://127.0.0.1:8080/`, register or login with a phone number in E.164 format, create or choose a room, and start chatting. The frontend uses the same `/auth/*`, `/rooms`, `/me`, and `/ws` backend endpoints.
 
 The backend listens on `127.0.0.1:8080` by default and serves the frontend at `http://127.0.0.1:8080/`.
 
@@ -29,8 +29,10 @@ The backend listens on `127.0.0.1:8080` by default and serves the frontend at `h
 The `frontend/` directory contains a static, responsive chat client with a dark-first design:
 
 - Login and registration tabs.
+- Auth-first screen that hides rooms until the user is logged in.
+- Room creation and room list after login.
 - Session-scoped development token storage, cleared when the browser tab/session ends.
-- Room connection controls with WebSocket status.
+- Room selection with WebSocket status.
 - Accessible live message log and toast feedback.
 
 Set `FRONTEND_DIR` if you want the backend to serve a different static asset directory.
@@ -59,12 +61,28 @@ curl -X POST http://127.0.0.1:8080/auth/login \
   -d '{"phone":"+15550001111","password":"correct horse battery staple"}'
 ```
 
+### List rooms
+
+```bash
+curl http://127.0.0.1:8080/rooms \
+  -H 'authorization: Bearer <JWT>'
+```
+
+### Create room
+
+```bash
+curl -X POST http://127.0.0.1:8080/rooms \
+  -H 'authorization: Bearer <JWT>' \
+  -H 'content-type: application/json' \
+  -d '{"name":"Family chat"}'
+```
+
 ### WebSocket
 
 Connect to:
 
 ```text
-ws://127.0.0.1:8080/ws?room_id=demo&token=<JWT>
+ws://127.0.0.1:8080/ws?room_id=<ROOM_ID>&token=<JWT>
 ```
 
 Send JSON messages like:

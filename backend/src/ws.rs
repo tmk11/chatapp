@@ -57,15 +57,19 @@ pub async fn handler(
     ws: WebSocketUpgrade,
 ) -> Result<Response, AppError> {
     let claims = state.auth.validate_token(&query.token)?;
-    if query.room_id.trim().is_empty() || query.room_id.len() > 128 {
+    let room_id = query.room_id.trim().to_owned();
+    if room_id.is_empty() || room_id.len() > 128 {
         return Err(AppError::BadRequest("invalid room id".to_owned()));
     }
+    if state.rooms.find_by_id(&room_id).await.is_none() {
+        return Err(AppError::BadRequest("unknown room id".to_owned()));
+    }
 
-    Ok(ws.on_upgrade(move |socket| handle_socket(state, socket, query.room_id, claims.sub)))
+    Ok(ws.on_upgrade(move |socket| handle_socket(state, socket, room_id, claims.sub)))
 }
 
 async fn handle_socket(state: AppState, mut socket: WebSocket, room_id: String, user_id: Uuid) {
-    let tx = state.rooms.join(&room_id).await;
+    let tx = state.room_hub.join(&room_id).await;
     let mut rx = tx.subscribe();
     debug!(%room_id, %user_id, "websocket connected");
 

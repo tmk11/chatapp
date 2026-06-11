@@ -1,11 +1,15 @@
-use crate::{auth::AuthService, config::Config, users::InMemoryUserStore, ws::RoomHub};
+use crate::{
+    auth::AuthService, config::Config, rooms::InMemoryRoomStore, users::InMemoryUserStore,
+    ws::RoomHub,
+};
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
     pub auth: Arc<AuthService>,
     pub users: Arc<InMemoryUserStore>,
-    pub rooms: RoomHub,
+    pub rooms: Arc<InMemoryRoomStore>,
+    pub room_hub: RoomHub,
 }
 
 impl AppState {
@@ -15,7 +19,8 @@ impl AppState {
         Self {
             auth,
             users,
-            rooms: RoomHub::default(),
+            rooms: Arc::new(InMemoryRoomStore::default()),
+            room_hub: RoomHub::default(),
         }
     }
 }

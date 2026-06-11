@@ -12,6 +12,7 @@ async-trait = "0.1"
 axum = { version = "0.8", features = ["ws", "macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 jsonwebtoken = "9"
+rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -20,4 +21,3 @@ tower-http = { version = "0.6", features = ["cors", "fs", "limit", "set-header",
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4", "serde"] }
-
