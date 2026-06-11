@@ -1,0 +1,362 @@
+:root {
+  color-scheme: dark;
+  --bg: #070a12;
+  --bg-soft: #0d1323;
+  --panel: rgba(16, 24, 39, 0.82);
+  --panel-strong: rgba(18, 27, 44, 0.96);
+  --border: rgba(148, 163, 184, 0.18);
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --primary: #7c3aed;
+  --primary-2: #22d3ee;
+  --success: #34d399;
+  --warning: #f59e0b;
+  --danger: #fb7185;
+  --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(124, 58, 237, 0.32), transparent 34rem),
+    radial-gradient(circle at bottom right, rgba(34, 211, 238, 0.24), transparent 32rem),
+    linear-gradient(135deg, #050711 0%, #0b1020 52%, #101827 100%);
+}
+
+button, input { font: inherit; }
+
+button {
+  border: 0;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease, border-color 160ms ease;
+}
+
+button:hover:not(:disabled) { transform: translateY(-1px); }
+button:disabled { cursor: not-allowed; opacity: 0.52; }
+
+input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 0.9rem 1rem;
+  color: var(--text);
+  background: rgba(15, 23, 42, 0.74);
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+input:focus {
+  border-color: rgba(34, 211, 238, 0.68);
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.12);
+  background: rgba(15, 23, 42, 0.94);
+}
+
+label {
+  display: grid;
+  gap: 0.45rem;
+  color: #dbeafe;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.app-shell {
+  width: min(1180px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2rem 0;
+}
+
+.hero-card, .panel {
+  border: 1px solid var(--border);
+  border-radius: 30px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(22px);
+}
+
+.hero-card {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  margin-bottom: 1.25rem;
+}
+
+.hero-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -20% -42% auto;
+  width: 36rem;
+  height: 36rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.34), rgba(34, 211, 238, 0.20));
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+.brand-row, .panel-header, .user-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.brand-mark, .avatar, .empty-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 22px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  color: white;
+  font-weight: 800;
+  box-shadow: 0 18px 44px rgba(34, 211, 238, 0.16);
+}
+
+.brand-mark { width: 4rem; height: 4rem; }
+.avatar { width: 3rem; height: 3rem; border-radius: 18px; }
+.empty-icon { width: 3.2rem; height: 3.2rem; }
+
+.eyebrow {
+  margin: 0 0 0.25rem;
+  color: var(--primary-2);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+h1, h2 { margin: 0; letter-spacing: -0.04em; }
+h1 { max-width: 760px; font-size: clamp(2.25rem, 7vw, 5rem); line-height: 0.92; }
+h2 { font-size: 1.35rem; }
+
+.hero-copy {
+  max-width: 680px;
+  margin: 1.3rem 0 1.6rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.trust-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.trust-grid span, .status-pill {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.55rem 0.75rem;
+  color: #dbeafe;
+  background: rgba(15, 23, 42, 0.7);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.8fr) minmax(0, 1.45fr);
+  gap: 1.25rem;
+}
+
+.panel { padding: 1.25rem; }
+.panel-header { justify-content: space-between; margin-bottom: 1rem; }
+.status-pill.online { border-color: rgba(52, 211, 153, 0.45); color: var(--success); }
+.status-pill.connecting { border-color: rgba(245, 158, 11, 0.45); color: var(--warning); }
+.status-pill.error { border-color: rgba(251, 113, 133, 0.45); color: var(--danger); }
+
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(2, 6, 23, 0.42);
+  margin-bottom: 1rem;
+}
+
+.tab {
+  border-radius: 14px;
+  padding: 0.75rem;
+  color: var(--muted);
+  background: transparent;
+  font-weight: 800;
+}
+
+.tab.active {
+  color: white;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(34, 211, 238, 0.82));
+}
+
+.stacked-form { display: grid; gap: 0.9rem; }
+.primary-button, .secondary-button, .ghost-button {
+  border-radius: 16px;
+  padding: 0.9rem 1rem;
+  color: white;
+  font-weight: 800;
+}
+
+.primary-button {
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  box-shadow: 0 16px 34px rgba(124, 58, 237, 0.22);
+}
+
+.secondary-button {
+  border: 1px solid rgba(34, 211, 238, 0.32);
+  background: rgba(34, 211, 238, 0.12);
+}
+
+.ghost-button {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  color: #dbeafe;
+  background: rgba(15, 23, 42, 0.66);
+}
+
+.user-card {
+  margin-top: 1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: rgba(2, 6, 23, 0.36);
+}
+
+.user-card strong, .user-card span { display: block; }
+.user-card span { margin-top: 0.2rem; color: var(--muted); font-size: 0.84rem; }
+
+.chat-panel {
+  min-height: 660px;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+}
+
+.room-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.messages {
+  min-height: 22rem;
+  max-height: 56vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: rgba(2, 6, 23, 0.42);
+}
+
+.empty-state {
+  min-height: 18rem;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.55rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-state strong { color: var(--text); }
+
+.message {
+  max-width: min(76%, 34rem);
+  align-self: flex-start;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: 18px 18px 18px 6px;
+  background: rgba(30, 41, 59, 0.92);
+}
+
+.message.mine {
+  align-self: flex-end;
+  border-color: rgba(34, 211, 238, 0.24);
+  border-radius: 18px 18px 6px 18px;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.92), rgba(8, 145, 178, 0.88));
+}
+
+.message-meta {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.message-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.message-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.hidden { display: none !important; }
+
+.toast-region {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  display: grid;
+  gap: 0.75rem;
+  z-index: 10;
+}
+
+.toast {
+  width: min(380px, calc(100vw - 2rem));
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 0.9rem 1rem;
+  color: var(--text);
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+}
+
+.toast.error { border-color: rgba(251, 113, 133, 0.42); }
+.toast.success { border-color: rgba(52, 211, 153, 0.42); }
+
+@media (max-width: 860px) {
+  .workspace, .room-form, .message-form { grid-template-columns: 1fr; }
+  .chat-panel { min-height: 560px; }
+  .message { max-width: 92%; }
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f8fafc;
+    --bg-soft: #eef2ff;
+    --panel: rgba(255, 255, 255, 0.82);
+    --panel-strong: rgba(255, 255, 255, 0.96);
+    --border: rgba(15, 23, 42, 0.12);
+    --text: #0f172a;
+    --muted: #475569;
+    --shadow: 0 24px 80px rgba(15, 23, 42, 0.16);
+  }
+
+  body {
+    background:
+      radial-gradient(circle at top left, rgba(124, 58, 237, 0.22), transparent 34rem),
+      radial-gradient(circle at bottom right, rgba(34, 211, 238, 0.20), transparent 32rem),
+      linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+  }
+
+  input, .trust-grid span, .status-pill, .tabs, .messages, .ghost-button {
+    background: rgba(255, 255, 255, 0.72);
+  }
+
+  label, .trust-grid span, .ghost-button { color: #1e293b; }
+}

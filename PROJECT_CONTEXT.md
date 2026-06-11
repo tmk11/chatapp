@@ -21,7 +21,7 @@ Core user-facing capabilities:
 
 ## Current implementation
 
-The repository currently contains a Rust backend scaffold in `backend/`:
+The repository currently contains a Rust backend scaffold in `backend/` plus a static development frontend in `frontend/`:
 
 - Axum HTTP server and Tokio async runtime.
 - JWT authentication.
@@ -29,6 +29,8 @@ The repository currently contains a Rust backend scaffold in `backend/`:
 - Development-only in-memory user store.
 - Development-only in-memory WebSocket room fanout.
 - Basic health, auth, profile, and WebSocket endpoints.
+- Static dark-first web frontend for local registration, login, room connection, and realtime message testing.
+- Backend static file serving from configurable `FRONTEND_DIR`, defaulting to the repository `frontend/` directory for local development.
 - Security headers and request body size limits.
 
 The current implementation is suitable for local development and architectural iteration. It is not yet production-ready.
@@ -83,20 +85,21 @@ Follow these rules unless a later human instruction explicitly overrides them:
 3. Never add `unwrap()` or `expect()` in request-handling paths. Convert errors to safe API responses.
 4. Never put `try/catch`-style wrappers around imports in languages that support them.
 5. Never log secrets, credentials, tokens, private keys, or plaintext message bodies.
-6. Keep authentication, authorization, storage, and transport concerns separated by module boundaries.
-7. Add tests for security-sensitive logic, auth flows, message validation, and storage adapters.
-8. New public APIs must document authentication, authorization, validation, idempotency, and rate limits.
-9. Any persistent schema change must include migrations and rollback notes.
-10. Any new background worker must define retry, dead-letter, idempotency, and observability behavior.
-11. Any feature that changes the runnable web app should include a screenshot when feasible.
-12. Keep this file updated whenever goals, architecture, coding rules, or roadmap items change.
+6. Treat browser token storage in the current frontend as development-only until production session management, refresh-token rotation, revocation, and stronger client-side security controls are implemented.
+7. Keep authentication, authorization, storage, and transport concerns separated by module boundaries.
+8. Add tests for security-sensitive logic, auth flows, message validation, and storage adapters.
+9. New public APIs must document authentication, authorization, validation, idempotency, and rate limits.
+10. Any persistent schema change must include migrations and rollback notes.
+11. Any new background worker must define retry, dead-letter, idempotency, and observability behavior.
+12. Any feature that changes the runnable web app should include a screenshot when feasible.
+13. Keep this file updated whenever goals, architecture, coding rules, or roadmap items change.
 
 ## Immediate roadmap
 
 Complete these tasks next:
 
 1. Replace in-memory user storage with Postgres via SQLx migrations.
-2. Add refresh tokens, device sessions, logout, and token revocation.
+2. Add refresh tokens, device sessions, logout, secure browser session handling, and token revocation.
 3. Add Redis-backed distributed rate limits.
 4. Add conversation and membership data models.
 5. Add durable encrypted message storage.
@@ -108,7 +111,8 @@ Complete these tasks next:
 11. Add OpenTelemetry tracing and Prometheus metrics.
 12. Add Docker Compose for local Postgres, Redis, and broker dependencies.
 13. Add CI with formatting, clippy, tests, audit, and container scan.
-14. Add load-test scenarios for 10k, 100k, and 1M-user growth phases.
+14. Add production frontend build pipeline, CSP, secure cookie/session strategy, and frontend integration tests.
+15. Add load-test scenarios for 10k, 100k, and 1M-user growth phases.
 
 ## Definition of done for backend changes
 
@@ -118,5 +122,5 @@ A backend change is done only when:
 - `cargo clippy --all-targets --all-features -- -D warnings` passes or the limitation is documented.
 - `cargo test --all` passes.
 - New behavior has tests or a written reason tests are deferred.
-- Security and privacy impacts are considered.
+- Security and privacy impacts are considered, including browser token handling for frontend changes.
 - This context file is updated if architecture, roadmap, or rules changed.
