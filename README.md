@@ -77,6 +77,10 @@ curl -X POST http://127.0.0.1:8080/rooms \
   -d '{"name":"Family chat"}'
 ```
 
+Room names are unique in the current in-memory development store. If two users
+create `Family chat`, the second request returns the existing room so both users
+join the same WebSocket group.
+
 ### WebSocket
 
 Connect to:

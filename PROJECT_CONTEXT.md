@@ -27,7 +27,7 @@ The repository currently contains a Rust backend scaffold in `backend/` plus a s
 - JWT authentication.
 - Argon2 password hashing.
 - Development-only in-memory user store.
-- Development-only in-memory room store with authenticated room creation and listing.
+- Development-only in-memory room store with authenticated room creation and listing. Room names are unique case-insensitively in this development store so two users typing the same room name land in the same room.
 - Development-only in-memory WebSocket room fanout.
 - Basic health, auth, profile, room, and WebSocket endpoints.
 - Static dark-first web frontend with an auth-first flow: users only see login/signup first, then room creation, room selection, and realtime messaging after login.

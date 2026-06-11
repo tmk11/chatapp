@@ -209,7 +209,9 @@ function renderRooms() {
       hour: "2-digit",
       minute: "2-digit",
     });
-    button.append(name, meta);
+    const code = document.createElement("span");
+    code.textContent = `Code: ${room.id}`;
+    button.append(name, meta, code);
     button.addEventListener("click", () => connectRoom(room));
     list.append(button);
   });
