@@ -5,14 +5,15 @@ const state = {
   mode: "login",
   token: sessionStorage.getItem(SESSION_TOKEN_KEY) || "",
   user: readStoredUser(),
-  rooms: [],
-  activeRoom: null,
+  friends: [],
+  requests: [],
+  activeFriend: null,
   socket: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
 const authForm = $("#auth-form");
-const roomForm = $("#room-form");
+const addFriendForm = $("#add-friend-form");
 const messageForm = $("#message-form");
 const messages = $("#messages");
 const messageInput = $("#message-input");
@@ -35,9 +36,9 @@ function apiUrl(path) {
   return `${window.location.origin}${path}`;
 }
 
-function wsUrl(roomId, token) {
+function wsUrl(token) {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const params = new URLSearchParams({ room_id: roomId, token });
+  const params = new URLSearchParams({ token });
   return `${protocol}//${window.location.host}/ws?${params}`;
 }
 
@@ -76,15 +77,17 @@ function saveSession(payload) {
   sessionStorage.setItem(SESSION_TOKEN_KEY, payload.token);
   sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(payload.user));
   renderSession();
-  loadRooms();
+  connectSocket();
+  loadContacts();
 }
 
 function clearSession() {
   disconnectSocket();
   state.token = "";
   state.user = null;
-  state.rooms = [];
-  state.activeRoom = null;
+  state.friends = [];
+  state.requests = [];
+  state.activeFriend = null;
   sessionStorage.removeItem(SESSION_TOKEN_KEY);
   sessionStorage.removeItem(SESSION_USER_KEY);
   renderSession();
@@ -96,7 +99,8 @@ function renderSession() {
   $("#app-screen").classList.toggle("hidden", !loggedIn);
 
   if (!loggedIn) {
-    renderRooms();
+    renderFriends();
+    renderRequests();
     showChatPlaceholder();
     return;
   }
@@ -141,14 +145,18 @@ async function authenticate(event) {
   }
 }
 
-async function loadRooms() {
+async function loadContacts() {
   if (!state.token) return;
 
   try {
-    state.rooms = await apiRequest("/rooms", {
-      headers: authHeaders(),
-    });
-    renderRooms();
+    const [friends, requests] = await Promise.all([
+      apiRequest("/friends", { headers: authHeaders() }),
+      apiRequest("/friends/requests", { headers: authHeaders() }),
+    ]);
+    state.friends = friends;
+    state.requests = requests;
+    renderFriends();
+    renderRequests();
   } catch (error) {
     showToast(error.message, "error");
     if (error.message === "authentication failed") {
@@ -157,62 +165,113 @@ async function loadRooms() {
   }
 }
 
-async function createRoom(event) {
+async function sendFriendRequest(event) {
   event.preventDefault();
-  const nameInput = $("#room-name");
-  const name = nameInput.value.trim();
-  if (!name) return;
+  const phoneInput = $("#friend-phone");
+  const phone = phoneInput.value.trim();
+  if (!phone) return;
 
   try {
-    $("#create-room-button").disabled = true;
-    const room = await apiRequest("/rooms", {
+    $("#add-friend-button").disabled = true;
+    const result = await apiRequest("/friends/requests", {
       method: "POST",
       headers: authHeaders({ "content-type": "application/json" }),
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ phone }),
     });
-    nameInput.value = "";
-    state.rooms = [room, ...state.rooms.filter((existing) => existing.id !== room.id)];
-    renderRooms();
-    connectRoom(room);
-    showToast("Room created.");
+    phoneInput.value = "";
+    if (result.status === "accepted") {
+      showToast("You are now friends.");
+      await loadContacts();
+    } else {
+      showToast("Friend request sent.");
+    }
   } catch (error) {
-    showToast(error.message, "error");
+    const friendly =
+      error.message === "not found"
+        ? "No account found with that phone number."
+        : error.message === "resource conflict"
+          ? "You are already friends."
+          : error.message;
+    showToast(friendly, "error");
   } finally {
-    $("#create-room-button").disabled = false;
+    $("#add-friend-button").disabled = false;
   }
 }
 
-function renderRooms() {
-  const list = $("#room-list");
+async function respondToRequest(requestId, accept) {
+  try {
+    await apiRequest(`/friends/requests/${requestId}`, {
+      method: "POST",
+      headers: authHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ accept }),
+    });
+    showToast(accept ? "Friend request accepted." : "Friend request declined.");
+    await loadContacts();
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function renderRequests() {
+  const section = $("#requests-section");
+  const list = $("#request-list");
+  list.replaceChildren();
+  section.classList.toggle("hidden", !state.requests.length);
+
+  state.requests.forEach((request) => {
+    const item = document.createElement("div");
+    item.className = "request-item";
+
+    const info = document.createElement("div");
+    const name = document.createElement("strong");
+    name.textContent = request.from.display_name;
+    const phone = document.createElement("span");
+    phone.textContent = request.from.phone;
+    info.append(name, phone);
+
+    const actions = document.createElement("div");
+    actions.className = "request-actions";
+    const accept = document.createElement("button");
+    accept.type = "button";
+    accept.className = "secondary-button small";
+    accept.textContent = "Accept";
+    accept.addEventListener("click", () => respondToRequest(request.id, true));
+    const decline = document.createElement("button");
+    decline.type = "button";
+    decline.className = "ghost-button small";
+    decline.textContent = "Decline";
+    decline.addEventListener("click", () => respondToRequest(request.id, false));
+    actions.append(accept, decline);
+
+    item.append(info, actions);
+    list.append(item);
+  });
+}
+
+function renderFriends() {
+  const list = $("#friend-list");
   list.replaceChildren();
 
-  if (!state.rooms.length) {
+  if (!state.friends.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = state.token ? "No rooms yet. Create one to begin." : "Login to view rooms.";
+    empty.textContent = state.token ? "No friends yet. Send a request to begin." : "Login to view friends.";
     list.append(empty);
     return;
   }
 
-  state.rooms.forEach((room) => {
+  state.friends.forEach((friend) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `room-item ${state.activeRoom?.id === room.id ? "active" : ""}`.trim();
-    button.dataset.roomId = room.id;
+    button.className = `friend-item ${state.activeFriend?.id === friend.id ? "active" : ""}`.trim();
+    button.dataset.friendId = friend.id;
 
     const name = document.createElement("strong");
-    name.textContent = room.name;
-    const meta = document.createElement("span");
-    meta.textContent = new Date(room.created_at).toLocaleString([], {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    const code = document.createElement("span");
-    code.textContent = `Code: ${room.id}`;
-    button.append(name, meta, code);
-    button.addEventListener("click", () => connectRoom(room));
+    name.textContent = friend.display_name;
+    const phone = document.createElement("span");
+    phone.textContent = friend.phone;
+    button.append(name, phone);
+    button.addEventListener("click", () => openConversation(friend));
     list.append(button);
   });
 }
@@ -226,39 +285,52 @@ function showChatPlaceholder() {
   sendButton.disabled = true;
 }
 
-function connectRoom(room) {
-  if (!state.token) {
-    showToast("Login before connecting to a room.", "error");
-    return;
-  }
-
-  disconnectSocket();
-  state.activeRoom = room;
-  renderRooms();
+async function openConversation(friend) {
+  state.activeFriend = friend;
+  renderFriends();
   $("#chat-placeholder").classList.add("hidden");
   $("#chat-area").classList.remove("hidden");
-  $("#room-title").textContent = room.name;
+  $("#chat-title").textContent = `${friend.display_name} (${friend.phone})`;
   messages.replaceChildren();
-  setStatus(socketStatus, "Connecting", "connecting");
 
-  const socket = new WebSocket(wsUrl(room.id, state.token));
+  try {
+    const history = await apiRequest(`/messages/${friend.id}`, { headers: authHeaders() });
+    messages.replaceChildren();
+    history.forEach(appendMessage);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+
+  updateComposerState();
+  if (!messageInput.disabled) messageInput.focus();
+  if (!state.socket || state.socket.readyState === WebSocket.CLOSED) {
+    connectSocket();
+  }
+}
+
+function updateComposerState() {
+  const connected = state.socket && state.socket.readyState === WebSocket.OPEN;
+  const ready = Boolean(connected && state.activeFriend);
+  messageInput.disabled = !ready;
+  sendButton.disabled = !ready;
+}
+
+function connectSocket() {
+  if (!state.token) return;
+  if (state.socket && state.socket.readyState !== WebSocket.CLOSED) return;
+
+  setStatus(socketStatus, "Connecting", "connecting");
+  const socket = new WebSocket(wsUrl(state.token));
   state.socket = socket;
 
   socket.addEventListener("open", () => {
     setStatus(socketStatus, "Connected", "online");
-    messageInput.disabled = false;
-    sendButton.disabled = false;
-    messageInput.focus();
+    updateComposerState();
   });
 
   socket.addEventListener("message", (event) => {
     try {
-      const payload = JSON.parse(event.data);
-      if (payload.error) {
-        showToast(payload.error, "error");
-        return;
-      }
-      appendMessage(payload);
+      handleSocketEvent(JSON.parse(event.data));
     } catch {
       showToast("Received an unreadable message.", "error");
     }
@@ -267,15 +339,13 @@ function connectRoom(room) {
   socket.addEventListener("close", () => {
     if (state.socket === socket) {
       state.socket = null;
-      messageInput.disabled = true;
-      sendButton.disabled = true;
       setStatus(socketStatus, "Disconnected");
+      updateComposerState();
     }
   });
 
   socket.addEventListener("error", () => {
     setStatus(socketStatus, "Error", "error");
-    showToast("WebSocket connection failed.", "error");
   });
 }
 
@@ -289,34 +359,114 @@ function disconnectSocket() {
   if (socketStatus) setStatus(socketStatus, "Disconnected");
 }
 
-function appendMessage(event) {
-  const mine = state.user && event.sender_id === state.user.id;
-  const message = document.createElement("article");
-  message.className = `message ${mine ? "mine" : ""}`.trim();
+function handleSocketEvent(event) {
+  if (event.type === "error") {
+    showToast(event.error, "error");
+    return;
+  }
+
+  if (event.type === "message") {
+    const message = event.message;
+    const peerId = message.sender_id === state.user.id ? message.recipient_id : message.sender_id;
+    if (state.activeFriend && peerId === state.activeFriend.id) {
+      appendMessage(message);
+    } else {
+      const sender = state.friends.find((friend) => friend.id === message.sender_id);
+      showToast(`New message from ${sender ? sender.display_name : "a friend"}.`);
+    }
+    return;
+  }
+
+  if (event.type === "message_deleted") {
+    const element = messages.querySelector(`[data-message-id="${event.message_id}"]`);
+    if (element) markDeleted(element);
+  }
+}
+
+function markDeleted(element) {
+  element.classList.add("deleted");
+  const body = element.querySelector(".message-body");
+  body.textContent = "This message was deleted.";
+  const actions = element.querySelector(".message-actions");
+  if (actions) actions.remove();
+}
+
+async function deleteMessage(message, element, scope) {
+  const confirmText =
+    scope === "everyone"
+      ? "Delete this message for everyone? This cannot be undone."
+      : "Delete this message for you only?";
+  if (!window.confirm(confirmText)) return;
+
+  try {
+    await apiRequest(`/messages/${message.id}?scope=${scope}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+    if (scope === "me") {
+      element.remove();
+    } else {
+      markDeleted(element);
+    }
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function appendMessage(message) {
+  const mine = state.user && message.sender_id === state.user.id;
+  const element = document.createElement("article");
+  element.className = `message ${mine ? "mine" : ""}`.trim();
+  element.dataset.messageId = message.id;
 
   const meta = document.createElement("div");
   meta.className = "message-meta";
   const sender = document.createElement("span");
-  sender.textContent = mine ? "You" : event.sender_id.slice(0, 8);
+  sender.textContent = mine ? "You" : state.activeFriend?.display_name || "Friend";
   const time = document.createElement("time");
-  time.dateTime = event.sent_at;
-  time.textContent = new Date(event.sent_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  time.dateTime = message.sent_at;
+  time.textContent = new Date(message.sent_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   meta.append(sender, time);
 
   const body = document.createElement("div");
   body.className = "message-body";
-  body.textContent = event.body;
+  body.textContent = message.body;
 
-  message.append(meta, body);
-  messages.append(message);
+  element.append(meta, body);
+
+  if (message.deleted) {
+    element.classList.add("deleted");
+    body.textContent = "This message was deleted.";
+  } else {
+    const actions = document.createElement("div");
+    actions.className = "message-actions";
+    const deleteForMe = document.createElement("button");
+    deleteForMe.type = "button";
+    deleteForMe.className = "message-action";
+    deleteForMe.textContent = "Delete for me";
+    deleteForMe.addEventListener("click", () => deleteMessage(message, element, "me"));
+    actions.append(deleteForMe);
+
+    if (mine) {
+      const deleteForEveryone = document.createElement("button");
+      deleteForEveryone.type = "button";
+      deleteForEveryone.className = "message-action danger";
+      deleteForEveryone.textContent = "Delete for everyone";
+      deleteForEveryone.addEventListener("click", () => deleteMessage(message, element, "everyone"));
+      actions.append(deleteForEveryone);
+    }
+    element.append(actions);
+  }
+
+  messages.append(element);
   messages.scrollTop = messages.scrollHeight;
 }
 
 function sendMessage(event) {
   event.preventDefault();
   const body = messageInput.value.trim();
-  if (!body || !state.socket || state.socket.readyState !== WebSocket.OPEN) return;
-  state.socket.send(JSON.stringify({ body }));
+  if (!body || !state.activeFriend || !state.socket || state.socket.readyState !== WebSocket.OPEN) return;
+  state.socket.send(JSON.stringify({ to: state.activeFriend.id, body }));
   messageInput.value = "";
   messageInput.focus();
 }
@@ -329,13 +479,14 @@ document.querySelectorAll(".tab").forEach((tab) => {
 });
 
 authForm.addEventListener("submit", authenticate);
-roomForm.addEventListener("submit", createRoom);
+addFriendForm.addEventListener("submit", sendFriendRequest);
 messageForm.addEventListener("submit", sendMessage);
-$("#refresh-rooms-button").addEventListener("click", loadRooms);
+$("#refresh-button").addEventListener("click", loadContacts);
 $("#logout-button").addEventListener("click", clearSession);
 
 renderMode();
 renderSession();
 if (state.token && state.user) {
-  loadRooms();
+  connectSocket();
+  loadContacts();
 }

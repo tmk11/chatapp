@@ -185,7 +185,7 @@ h2 { margin-bottom: 0; font-size: 1.25rem; letter-spacing: -0.03em; }
   gap: 1rem;
 }
 
-.rooms-panel, .chat-panel {
+.friends-panel, .chat-panel {
   min-height: 650px;
   padding: 1rem;
 }
@@ -195,18 +195,58 @@ h2 { margin-bottom: 0; font-size: 1.25rem; letter-spacing: -0.03em; }
   margin-bottom: 1rem;
 }
 
-.room-form {
+.add-friend-form {
   display: grid;
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
 
-.room-list {
+.requests-section h3 {
+  margin: 0 0 0.6rem;
+  font-size: 0.95rem;
+  letter-spacing: -0.02em;
+}
+
+.requests-section {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.request-list {
   display: grid;
   gap: 0.65rem;
 }
 
-.room-item {
+.request-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  border-radius: 18px;
+  padding: 0.7rem 0.85rem;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.request-item > div:first-child {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.request-item span { color: var(--muted); font-size: 0.78rem; }
+
+.request-actions {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.friend-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.friend-item {
   display: grid;
   gap: 0.25rem;
   width: 100%;
@@ -218,12 +258,12 @@ h2 { margin-bottom: 0; font-size: 1.25rem; letter-spacing: -0.03em; }
   background: rgba(2, 6, 23, 0.42);
 }
 
-.room-item.active {
+.friend-item.active {
   border-color: rgba(6, 182, 212, 0.56);
   background: rgba(6, 182, 212, 0.14);
 }
 
-.room-item span { color: var(--muted); font-size: 0.78rem; }
+.friend-item span { color: var(--muted); font-size: 0.78rem; }
 
 .chat-panel { display: grid; }
 
@@ -300,6 +340,38 @@ h2 { margin-bottom: 0; font-size: 1.25rem; letter-spacing: -0.03em; }
   line-height: 1.45;
 }
 
+.message.deleted .message-body {
+  color: rgba(226, 232, 240, 0.6);
+  font-style: italic;
+}
+
+.message-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.message:hover .message-actions,
+.message:focus-within .message-actions {
+  opacity: 1;
+}
+
+.message-action {
+  border: 0;
+  padding: 0;
+  color: rgba(226, 232, 240, 0.75);
+  background: transparent;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-decoration: underline;
+}
+
+.message-action.danger { color: var(--danger); }
+.message.mine .message-action { color: rgba(255, 255, 255, 0.85); }
+.message.mine .message-action.danger { color: #fecdd3; }
+
 .message-form {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -334,7 +406,7 @@ h2 { margin-bottom: 0; font-size: 1.25rem; letter-spacing: -0.03em; }
 @media (max-width: 860px) {
   .topbar, .user-actions { align-items: stretch; flex-direction: column; }
   .workspace, .message-form { grid-template-columns: 1fr; }
-  .rooms-panel, .chat-panel { min-height: auto; }
+  .friends-panel, .chat-panel { min-height: auto; }
   .message { max-width: 92%; }
 }
 
@@ -357,9 +429,10 @@ h2 { margin-bottom: 0; font-size: 1.25rem; letter-spacing: -0.03em; }
       linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
   }
 
-  input, .tabs, .user-chip, .room-item, .messages, .status-pill, .ghost-button {
+  input, .tabs, .user-chip, .friend-item, .messages, .status-pill, .ghost-button {
     background: rgba(255, 255, 255, 0.74);
   }
+
 
   label, .ghost-button { color: #1e293b; }
 }
