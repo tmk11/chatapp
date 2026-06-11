@@ -374,9 +374,27 @@ h2 { margin-bottom: 0; font-size: 1.25rem; letter-spacing: -0.03em; }
 
 .message-form {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr auto;
   gap: 0.75rem;
   margin-top: 1rem;
+}
+
+.attach-button {
+  padding: 0.85rem 0.95rem;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.message-image {
+  display: block;
+  max-width: 100%;
+  max-height: 20rem;
+  border-radius: 12px;
+}
+
+.image-loading {
+  color: rgba(226, 232, 240, 0.6);
+  font-style: italic;
 }
 
 .hidden { display: none !important; }

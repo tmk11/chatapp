@@ -14,12 +14,21 @@ use uuid::Uuid;
 
 pub const MAX_MESSAGE_BODY_BYTES: usize = 4096;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageKind {
+    Text,
+    Image,
+}
+
 #[derive(Clone, Debug)]
 struct StoredMessage {
     id: Uuid,
     sender_id: Uuid,
     recipient_id: Uuid,
+    kind: MessageKind,
     body: String,
+    attachment_id: Option<Uuid>,
     sent_at: DateTime<Utc>,
     deleted_for_everyone: bool,
     deleted_for: HashSet<Uuid>,
@@ -33,7 +42,9 @@ pub struct MessageView {
     pub id: Uuid,
     pub sender_id: Uuid,
     pub recipient_id: Uuid,
+    pub kind: MessageKind,
     pub body: String,
+    pub attachment_id: Option<Uuid>,
     pub sent_at: DateTime<Utc>,
     pub deleted: bool,
 }
@@ -44,10 +55,16 @@ impl StoredMessage {
             id: self.id,
             sender_id: self.sender_id,
             recipient_id: self.recipient_id,
+            kind: self.kind,
             body: if self.deleted_for_everyone {
                 String::new()
             } else {
                 self.body.clone()
+            },
+            attachment_id: if self.deleted_for_everyone {
+                None
+            } else {
+                self.attachment_id
             },
             sent_at: self.sent_at,
             deleted: self.deleted_for_everyone,
@@ -75,17 +92,45 @@ impl InMemoryMessageStore {
         body: String,
     ) -> Result<MessageView, AppError> {
         let body = validate_body(&body)?;
-        let message = StoredMessage {
+        self.push(StoredMessage {
             id: Uuid::new_v4(),
             sender_id,
             recipient_id,
+            kind: MessageKind::Text,
             body,
+            attachment_id: None,
             sent_at: Utc::now(),
             deleted_for_everyone: false,
             deleted_for: HashSet::new(),
-        };
+        })
+        .await
+    }
+
+    /// The attachment must already be validated and bound to this sender and
+    /// recipient via the attachment store before calling this.
+    pub async fn append_image(
+        &self,
+        sender_id: Uuid,
+        recipient_id: Uuid,
+        attachment_id: Uuid,
+    ) -> Result<MessageView, AppError> {
+        self.push(StoredMessage {
+            id: Uuid::new_v4(),
+            sender_id,
+            recipient_id,
+            kind: MessageKind::Image,
+            body: String::new(),
+            attachment_id: Some(attachment_id),
+            sent_at: Utc::now(),
+            deleted_for_everyone: false,
+            deleted_for: HashSet::new(),
+        })
+        .await
+    }
+
+    async fn push(&self, message: StoredMessage) -> Result<MessageView, AppError> {
         let view = message.view();
-        let key = conversation_key(sender_id, recipient_id);
+        let key = conversation_key(message.sender_id, message.recipient_id);
         self.message_index.write().await.insert(message.id, key);
         self.conversations
             .write()
@@ -129,12 +174,13 @@ impl InMemoryMessageStore {
     }
 
     /// Replaces the message with a tombstone for both participants. Only the
-    /// original sender may delete a message for everyone.
+    /// original sender may delete a message for everyone. Returns the
+    /// tombstone view plus the id of the attachment to purge, if any.
     pub async fn delete_for_everyone(
         &self,
         message_id: Uuid,
         user_id: Uuid,
-    ) -> Result<MessageView, AppError> {
+    ) -> Result<(MessageView, Option<Uuid>), AppError> {
         let key = self.lookup_key(message_id).await?;
         if key.0 != user_id && key.1 != user_id {
             return Err(AppError::NotFound);
@@ -149,7 +195,8 @@ impl InMemoryMessageStore {
         }
         message.deleted_for_everyone = true;
         message.body.clear();
-        Ok(message.view())
+        let purged_attachment = message.attachment_id.take();
+        Ok((message.view(), purged_attachment))
     }
 
     async fn lookup_key(&self, message_id: Uuid) -> Result<(Uuid, Uuid), AppError> {
@@ -208,8 +255,9 @@ pub struct DeleteResponse {
 
 /// DELETE /messages/{id}?scope=me|everyone — authenticated.
 /// `scope=me` hides the message for the current user only (any participant).
-/// `scope=everyone` tombstones the message for both sides (sender only) and
-/// notifies connected participants over WebSocket.
+/// `scope=everyone` tombstones the message for both sides (sender only),
+/// purges any image attachment, and notifies connected participants over
+/// WebSocket.
 pub async fn delete(
     State(state): State<AppState>,
     auth::CurrentUser(user): auth::CurrentUser,
@@ -224,10 +272,13 @@ pub async fn delete(
             }))
         }
         DeleteScope::Everyone => {
-            let tombstone = state
+            let (tombstone, purged_attachment) = state
                 .messages
                 .delete_for_everyone(message_id, user.id)
                 .await?;
+            if let Some(attachment_id) = purged_attachment {
+                state.attachments.remove(attachment_id).await;
+            }
             let event = OutboundEvent::MessageDeleted {
                 message_id: tombstone.id,
                 sender_id: tombstone.sender_id,
@@ -247,7 +298,7 @@ pub async fn delete(
 
 #[cfg(test)]
 mod tests {
-    use super::{InMemoryMessageStore, validate_body};
+    use super::{InMemoryMessageStore, MessageKind, validate_body};
     use uuid::Uuid;
 
     #[test]
@@ -300,7 +351,10 @@ mod tests {
         let bob = Uuid::new_v4();
 
         let message = store.append(alice, bob, "oops".to_owned()).await.unwrap();
-        store.delete_for_everyone(message.id, alice).await.unwrap();
+        let (tombstone, purged_attachment) =
+            store.delete_for_everyone(message.id, alice).await.unwrap();
+        assert!(tombstone.deleted);
+        assert!(purged_attachment.is_none());
 
         for viewer in [alice, bob] {
             let history = store
@@ -310,6 +364,32 @@ mod tests {
             assert!(history[0].deleted);
             assert!(history[0].body.is_empty());
         }
+    }
+
+    #[tokio::test]
+    async fn image_messages_are_stored_and_purged_on_delete_for_everyone() {
+        let store = InMemoryMessageStore::default();
+        let alice = Uuid::new_v4();
+        let bob = Uuid::new_v4();
+        let attachment_id = Uuid::new_v4();
+
+        let message = store.append_image(alice, bob, attachment_id).await.unwrap();
+        assert_eq!(message.kind, MessageKind::Image);
+        assert_eq!(message.attachment_id, Some(attachment_id));
+
+        let history = store.history(bob, alice).await;
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].attachment_id, Some(attachment_id));
+
+        let (tombstone, purged_attachment) =
+            store.delete_for_everyone(message.id, alice).await.unwrap();
+        assert!(tombstone.deleted);
+        assert!(tombstone.attachment_id.is_none());
+        assert_eq!(purged_attachment, Some(attachment_id));
+
+        let history = store.history(bob, alice).await;
+        assert!(history[0].deleted);
+        assert!(history[0].attachment_id.is_none());
     }
 
     #[tokio::test]

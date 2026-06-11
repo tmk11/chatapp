@@ -1,6 +1,7 @@
 use crate::{
-    auth::AuthService, config::Config, friends::InMemoryFriendStore,
-    messages::InMemoryMessageStore, users::InMemoryUserStore, ws::UserHub,
+    attachments::InMemoryAttachmentStore, auth::AuthService, config::Config,
+    friends::InMemoryFriendStore, messages::InMemoryMessageStore, users::InMemoryUserStore,
+    ws::UserHub,
 };
 use std::sync::Arc;
 
@@ -10,6 +11,7 @@ pub struct AppState {
     pub users: Arc<InMemoryUserStore>,
     pub friends: Arc<InMemoryFriendStore>,
     pub messages: Arc<InMemoryMessageStore>,
+    pub attachments: Arc<InMemoryAttachmentStore>,
     pub user_hub: UserHub,
 }
 
@@ -22,6 +24,7 @@ impl AppState {
             users,
             friends: Arc::new(InMemoryFriendStore::default()),
             messages: Arc::new(InMemoryMessageStore::default()),
+            attachments: Arc::new(InMemoryAttachmentStore::default()),
             user_hub: UserHub::default(),
         }
     }

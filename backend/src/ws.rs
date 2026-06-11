@@ -61,13 +61,15 @@ pub enum OutboundEvent {
 #[derive(Debug, Deserialize)]
 struct IncomingMessage {
     to: Uuid,
-    body: String,
+    body: Option<String>,
+    attachment_id: Option<Uuid>,
 }
 
 /// GET /ws?token=<JWT> — one connection per user session. The client sends
-/// `{"to":"<friend user id>","body":"..."}` frames; the server persists the
-/// message and fans it out to both participants' connections. Sending is only
-/// allowed between friends.
+/// `{"to":"<friend user id>","body":"..."}` frames for text, or
+/// `{"to":"...","attachment_id":"..."}` frames referencing a previously
+/// uploaded image; the server persists the message and fans it out to both
+/// participants' connections. Sending is only allowed between friends.
 pub async fn handler(
     State(state): State<AppState>,
     Query(query): Query<WsQuery>,
@@ -141,11 +143,34 @@ async fn handle_incoming(state: &AppState, user_id: Uuid, text: &str) -> Option<
             error: "recipient is not your friend".to_owned(),
         });
     }
-    let message = match state
-        .messages
-        .append(user_id, incoming.to, incoming.body)
-        .await
-    {
+    let stored = match (incoming.body, incoming.attachment_id) {
+        (Some(body), None) => state.messages.append(user_id, incoming.to, body).await,
+        (None, Some(attachment_id)) => {
+            match state
+                .attachments
+                .attach(attachment_id, user_id, incoming.to)
+                .await
+            {
+                Ok(()) => {
+                    state
+                        .messages
+                        .append_image(user_id, incoming.to, attachment_id)
+                        .await
+                }
+                Err(_) => {
+                    return Some(OutboundEvent::Error {
+                        error: "unknown or already used attachment".to_owned(),
+                    });
+                }
+            }
+        }
+        _ => {
+            return Some(OutboundEvent::Error {
+                error: "message must contain either a body or an attachment_id".to_owned(),
+            });
+        }
+    };
+    let message = match stored {
         Ok(message) => message,
         Err(_) => {
             return Some(OutboundEvent::Error {

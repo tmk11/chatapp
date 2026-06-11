@@ -1,4 +1,5 @@
 mod app;
+mod attachments;
 mod auth;
 mod config;
 mod error;

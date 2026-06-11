@@ -9,6 +9,7 @@ A WhatsApp-inspired chat application scaffold with a Rust backend designed for s
 - JWT-based authentication with Argon2 password hashing.
 - WhatsApp-style friend requests: add a friend by phone number, accept or decline incoming requests.
 - 1:1 real-time messaging over WebSocket between friends only.
+- Image messages: upload PNG/JPEG/GIF/WebP up to 5 MiB and send to a friend; image type is validated from magic bytes server-side.
 - Stored conversation history that survives reconnects (in-memory development store).
 - Message deletion: delete for me (hides the message for you) or delete for everyone (sender only, tombstones the message for both sides).
 - Security middleware for HTTP headers and request-size limits.
@@ -37,6 +38,7 @@ The `frontend/` directory contains a static, responsive chat client with a dark-
 - Session-scoped development token storage, cleared when the browser tab/session ends.
 - One WebSocket connection per session with live status.
 - Stored conversation history loaded when a friend is selected.
+- Image sending via the 📷 button; images are fetched with the auth token and rendered inline.
 - Per-message actions: delete for me, and delete for everyone on your own messages.
 - Accessible live message log and toast feedback.
 
@@ -112,6 +114,31 @@ Returns the stored conversation oldest-first. Messages you deleted for yourself
 are omitted; messages deleted for everyone are returned with `"deleted": true`
 and an empty body.
 
+### Upload an image attachment
+
+```bash
+curl -X POST http://127.0.0.1:8080/attachments \
+  -H 'authorization: Bearer <JWT>' \
+  -H 'content-type: image/png' \
+  --data-binary @photo.png
+```
+
+Accepts raw PNG, JPEG, GIF, or WebP bytes up to 5 MiB; the image type is
+detected from the file's magic bytes, not the header. Returns
+`{"id":"<ATTACHMENT_ID>","content_type":"image/png","size":...}`. The
+attachment stays private to you until you send it in a message, and can be
+used in exactly one message.
+
+### Download an image attachment
+
+```bash
+curl http://127.0.0.1:8080/attachments/<ATTACHMENT_ID> \
+  -H 'authorization: Bearer <JWT>' -o photo.png
+```
+
+Only the uploader and, after the message is sent, the recipient can download
+an attachment.
+
 ### Delete a message
 
 ```bash
@@ -119,8 +146,9 @@ and an empty body.
 curl -X DELETE 'http://127.0.0.1:8080/messages/<MESSAGE_ID>?scope=me' \
   -H 'authorization: Bearer <JWT>'
 
-# Delete for everyone (sender only); both sides see a tombstone and connected
-# clients receive a `message_deleted` WebSocket event:
+# Delete for everyone (sender only); both sides see a tombstone, any image
+# attachment is purged, and connected clients receive a `message_deleted`
+# WebSocket event:
 curl -X DELETE 'http://127.0.0.1:8080/messages/<MESSAGE_ID>?scope=everyone' \
   -H 'authorization: Bearer <JWT>'
 ```
@@ -133,16 +161,19 @@ Connect once per session:
 ws://127.0.0.1:8080/ws?token=<JWT>
 ```
 
-Send direct messages to a friend:
+Send direct messages to a friend — text or a previously uploaded image
+(exactly one of `body` or `attachment_id`):
 
 ```json
 {"to":"<FRIEND_USER_ID>","body":"hello"}
+{"to":"<FRIEND_USER_ID>","attachment_id":"<ATTACHMENT_ID>"}
 ```
 
 Receive events shaped like:
 
 ```json
-{"type":"message","message":{"id":"...","sender_id":"...","recipient_id":"...","body":"hello","sent_at":"...","deleted":false}}
+{"type":"message","message":{"id":"...","sender_id":"...","recipient_id":"...","kind":"text","body":"hello","attachment_id":null,"sent_at":"...","deleted":false}}
+{"type":"message","message":{"id":"...","sender_id":"...","recipient_id":"...","kind":"image","body":"","attachment_id":"...","sent_at":"...","deleted":false}}
 {"type":"message_deleted","message_id":"...","sender_id":"...","recipient_id":"..."}
 {"type":"error","error":"recipient is not your friend"}
 ```
