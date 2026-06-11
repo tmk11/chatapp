@@ -5,6 +5,7 @@ A WhatsApp-inspired chat application scaffold with a Rust backend designed for s
 ## What is included
 
 - Rust backend using Axum and Tokio.
+- User-friendly dark-mode web frontend served by the backend.
 - JWT-based authentication with Argon2 password hashing.
 - WebSocket real-time messaging endpoint.
 - Security middleware for HTTP headers and request-size limits.
@@ -19,7 +20,20 @@ cp .env.example .env
 cargo run
 ```
 
-The backend listens on `127.0.0.1:8080` by default.
+Then open `http://127.0.0.1:8080/`, register or login with a phone number in E.164 format, choose a room ID, and start chatting. The frontend uses the same `/auth/*`, `/me`, and `/ws` backend endpoints.
+
+The backend listens on `127.0.0.1:8080` by default and serves the frontend at `http://127.0.0.1:8080/`.
+
+## Frontend
+
+The `frontend/` directory contains a static, responsive chat client with a dark-first design:
+
+- Login and registration tabs.
+- Session-scoped development token storage, cleared when the browser tab/session ends.
+- Room connection controls with WebSocket status.
+- Accessible live message log and toast feedback.
+
+Set `FRONTEND_DIR` if you want the backend to serve a different static asset directory.
 
 ## API
 

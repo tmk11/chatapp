@@ -1,5 +1,5 @@
 use anyhow::{Context, bail};
-use std::{env, net::SocketAddr};
+use std::{env, net::SocketAddr, path::PathBuf};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -7,6 +7,7 @@ pub struct Config {
     pub port: u16,
     pub jwt_secret: String,
     pub jwt_ttl_seconds: i64,
+    pub frontend_dir: PathBuf,
 }
 
 impl Config {
@@ -25,12 +26,16 @@ impl Config {
             .unwrap_or_else(|_| "3600".to_owned())
             .parse::<i64>()
             .context("JWT_TTL_SECONDS must be an integer")?;
+        let frontend_dir = env::var("FRONTEND_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| default_frontend_dir());
 
         Ok(Self {
             host,
             port,
             jwt_secret,
             jwt_ttl_seconds,
+            frontend_dir,
         })
     }
 
@@ -39,4 +44,12 @@ impl Config {
             .parse()
             .expect("validated host and port must form a socket address")
     }
+}
+
+fn default_frontend_dir() -> PathBuf {
+    let candidates = [PathBuf::from("frontend"), PathBuf::from("../frontend")];
+    candidates
+        .into_iter()
+        .find(|path| path.exists())
+        .unwrap_or_else(|| PathBuf::from("frontend"))
 }

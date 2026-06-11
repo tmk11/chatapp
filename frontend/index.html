@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Secure Chat</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero-card" aria-labelledby="app-title">
+        <div class="brand-row">
+          <div class="brand-mark" aria-hidden="true">SC</div>
+          <div>
+            <p class="eyebrow">Secure Chat</p>
+            <h1 id="app-title">Private rooms, instant messages.</h1>
+          </div>
+        </div>
+        <p class="hero-copy">
+          A polished dark-mode frontend for the Rust chat backend. Create an account,
+          join any room, and test realtime WebSocket messaging in seconds.
+        </p>
+        <div class="trust-grid" aria-label="Security highlights">
+          <span>JWT sessions</span>
+          <span>Argon2 passwords</span>
+          <span>Realtime WebSockets</span>
+        </div>
+      </section>
+
+      <section class="workspace" aria-label="Chat workspace">
+        <div class="panel auth-panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Account</p>
+              <h2>Sign in or register</h2>
+            </div>
+            <span class="status-pill" id="auth-status">Offline</span>
+          </div>
+
+          <div class="tabs" role="tablist" aria-label="Authentication mode">
+            <button class="tab active" type="button" data-mode="login" role="tab" aria-selected="true">Login</button>
+            <button class="tab" type="button" data-mode="register" role="tab" aria-selected="false">Register</button>
+          </div>
+
+          <form id="auth-form" class="stacked-form">
+            <label>
+              Phone number
+              <input id="phone" name="phone" type="tel" placeholder="+15550001111" autocomplete="tel" required />
+            </label>
+            <label id="display-name-row" class="hidden">
+              Display name
+              <input id="display-name" name="displayName" type="text" placeholder="Alice" autocomplete="name" />
+            </label>
+            <label>
+              Password
+              <input id="password" name="password" type="password" minlength="12" placeholder="At least 12 characters" autocomplete="current-password" required />
+            </label>
+            <button class="primary-button" type="submit" id="auth-submit">Login</button>
+          </form>
+
+          <div class="user-card hidden" id="user-card">
+            <div class="avatar" id="avatar">U</div>
+            <div>
+              <strong id="user-name">User</strong>
+              <span id="user-phone">+10000000000</span>
+            </div>
+            <button class="ghost-button" type="button" id="logout-button">Logout</button>
+          </div>
+        </div>
+
+        <div class="panel chat-panel">
+          <div class="panel-header chat-header">
+            <div>
+              <p class="eyebrow">Room</p>
+              <h2 id="room-title">demo</h2>
+            </div>
+            <span class="status-pill" id="socket-status">Disconnected</span>
+          </div>
+
+          <form id="room-form" class="room-form">
+            <label>
+              Room ID
+              <input id="room-id" type="text" value="demo" maxlength="128" required />
+            </label>
+            <button class="secondary-button" type="submit" id="connect-button">Connect</button>
+          </form>
+
+          <div class="messages" id="messages" role="log" aria-live="polite">
+            <div class="empty-state">
+              <div class="empty-icon" aria-hidden="true">💬</div>
+              <strong>No messages yet</strong>
+              <span>Login, connect to a room, and say hello.</span>
+            </div>
+          </div>
+
+          <form id="message-form" class="message-form">
+            <input id="message-input" type="text" maxlength="4096" placeholder="Write a message..." autocomplete="off" disabled />
+            <button class="primary-button" type="submit" id="send-button" disabled>Send</button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <div class="toast-region" id="toast-region" aria-live="assertive" aria-atomic="true"></div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>

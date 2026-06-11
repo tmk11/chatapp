@@ -7,11 +7,13 @@ use serde::Serialize;
 use tower_http::{
     cors::{Any, CorsLayer},
     limit::RequestBodyLimitLayer,
+    services::ServeDir,
     set_header::SetResponseHeaderLayer,
     trace::TraceLayer,
 };
 
 pub fn build_router(config: Config) -> Router {
+    let frontend_dir = config.frontend_dir.clone();
     let state = AppState::new(config);
     let (content_type_name, content_type_value) = security::content_type_options_header();
     let (frame_name, frame_value) = security::frame_options_header();
@@ -22,6 +24,7 @@ pub fn build_router(config: Config) -> Router {
         .route("/auth/login", post(auth::login))
         .route("/me", get(me))
         .route("/ws", get(ws::handler))
+        .fallback_service(ServeDir::new(frontend_dir))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(SetResponseHeaderLayer::overriding(
