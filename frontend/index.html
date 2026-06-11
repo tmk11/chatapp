@@ -100,6 +100,8 @@
               <div class="messages" id="messages" role="log" aria-live="polite"></div>
 
               <form id="message-form" class="message-form">
+                <input id="image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" class="hidden" />
+                <button class="ghost-button attach-button" type="button" id="attach-button" title="Send an image" aria-label="Send an image" disabled>📷</button>
                 <input id="message-input" type="text" maxlength="4096" placeholder="Write a message..." autocomplete="off" disabled />
                 <button class="primary-button" type="submit" id="send-button" disabled>Send</button>
               </form>

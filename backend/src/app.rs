@@ -1,4 +1,4 @@
-use crate::{auth, config::Config, friends, messages, security, state::AppState, ws};
+use crate::{attachments, auth, config::Config, friends, messages, security, state::AppState, ws};
 use axum::{
     Json, Router,
     routing::{get, post},
@@ -18,7 +18,7 @@ pub fn build_router(config: Config) -> Router {
     let (content_type_name, content_type_value) = security::content_type_options_header();
     let (frame_name, frame_value) = security::frame_options_header();
 
-    Router::new()
+    let api = Router::new()
         .route("/health", get(health))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
@@ -34,6 +34,19 @@ pub fn build_router(config: Config) -> Router {
         )
         .route("/me", get(me))
         .route("/ws", get(ws::handler))
+        .layer(RequestBodyLimitLayer::new(security::MAX_REQUEST_BODY_BYTES));
+
+    // Image uploads need a larger body limit than the JSON API routes.
+    let media = Router::new()
+        .route("/attachments", post(attachments::upload))
+        .route("/attachments/{id}", get(attachments::download))
+        .layer(RequestBodyLimitLayer::new(
+            attachments::MAX_ATTACHMENT_BYTES + 1024,
+        ));
+
+    Router::new()
+        .merge(api)
+        .merge(media)
         .fallback_service(ServeDir::new(frontend_dir))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
@@ -42,7 +55,6 @@ pub fn build_router(config: Config) -> Router {
             content_type_value,
         ))
         .layer(SetResponseHeaderLayer::overriding(frame_name, frame_value))
-        .layer(RequestBodyLimitLayer::new(security::MAX_REQUEST_BODY_BYTES))
         .layer(CorsLayer::new().allow_origin(Any))
 }
 

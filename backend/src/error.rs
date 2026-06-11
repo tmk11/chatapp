@@ -18,6 +18,8 @@ pub enum AppError {
     Conflict,
     #[error("invalid request: {0}")]
     BadRequest(String),
+    #[error("payload too large")]
+    PayloadTooLarge,
     #[error("internal server error")]
     Internal,
 }
@@ -35,6 +37,7 @@ impl IntoResponse for AppError {
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::Conflict => StatusCode::CONFLICT,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            AppError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             AppError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let body = Json(ErrorBody {
@@ -52,6 +55,7 @@ impl AppError {
             AppError::NotFound => "not found",
             AppError::Conflict => "resource conflict",
             AppError::BadRequest(_) => "invalid request",
+            AppError::PayloadTooLarge => "payload too large",
             AppError::Internal => "internal server error",
         }
     }

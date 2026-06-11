@@ -76,3 +76,15 @@ CREATE TABLE IF NOT EXISTS message_deletions (
     deleted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (message_id, user_id)
 );
+
+-- Media metadata; encrypted bytes live in object storage, keyed by storage_key.
+CREATE TABLE IF NOT EXISTS attachments (
+    id UUID PRIMARY KEY,
+    owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
+    content_type TEXT NOT NULL,
+    byte_size BIGINT NOT NULL,
+    storage_key TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ
+);

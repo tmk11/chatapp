@@ -18,7 +18,12 @@ const messageForm = $("#message-form");
 const messages = $("#messages");
 const messageInput = $("#message-input");
 const sendButton = $("#send-button");
+const attachButton = $("#attach-button");
+const imageInput = $("#image-input");
 const socketStatus = $("#socket-status");
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const blobUrlCache = new Map();
 
 function readStoredUser() {
   const storedUser = sessionStorage.getItem(SESSION_USER_KEY);
@@ -313,6 +318,7 @@ function updateComposerState() {
   const ready = Boolean(connected && state.activeFriend);
   messageInput.disabled = !ready;
   sendButton.disabled = !ready;
+  attachButton.disabled = !ready;
 }
 
 function connectSocket() {
@@ -356,6 +362,7 @@ function disconnectSocket() {
   }
   messageInput.disabled = true;
   sendButton.disabled = true;
+  attachButton.disabled = true;
   if (socketStatus) setStatus(socketStatus, "Disconnected");
 }
 
@@ -413,6 +420,34 @@ async function deleteMessage(message, element, scope) {
   }
 }
 
+async function attachmentUrl(attachmentId) {
+  if (blobUrlCache.has(attachmentId)) return blobUrlCache.get(attachmentId);
+  const response = await fetch(apiUrl(`/attachments/${attachmentId}`), { headers: authHeaders() });
+  if (!response.ok) throw new Error("Could not load image.");
+  const url = URL.createObjectURL(await response.blob());
+  blobUrlCache.set(attachmentId, url);
+  return url;
+}
+
+function renderImageBody(body, attachmentId) {
+  const placeholder = document.createElement("span");
+  placeholder.className = "image-loading";
+  placeholder.textContent = "Loading image…";
+  body.append(placeholder);
+
+  attachmentUrl(attachmentId)
+    .then((url) => {
+      const image = document.createElement("img");
+      image.className = "message-image";
+      image.alt = "Sent image";
+      image.src = url;
+      placeholder.replaceWith(image);
+    })
+    .catch(() => {
+      placeholder.textContent = "Image unavailable.";
+    });
+}
+
 function appendMessage(message) {
   const mine = state.user && message.sender_id === state.user.id;
   const element = document.createElement("article");
@@ -430,7 +465,11 @@ function appendMessage(message) {
 
   const body = document.createElement("div");
   body.className = "message-body";
-  body.textContent = message.body;
+  if (!message.deleted && message.kind === "image" && message.attachment_id) {
+    renderImageBody(body, message.attachment_id);
+  } else {
+    body.textContent = message.body;
+  }
 
   element.append(meta, body);
 
@@ -471,6 +510,33 @@ function sendMessage(event) {
   messageInput.focus();
 }
 
+async function sendImage(file) {
+  if (!file || !state.activeFriend || !state.socket || state.socket.readyState !== WebSocket.OPEN) return;
+  if (file.size > MAX_IMAGE_BYTES) {
+    showToast("Images must be 5 MB or smaller.", "error");
+    return;
+  }
+
+  try {
+    attachButton.disabled = true;
+    const upload = await apiRequest("/attachments", {
+      method: "POST",
+      headers: authHeaders({ "content-type": file.type || "application/octet-stream" }),
+      body: file,
+    });
+    state.socket.send(JSON.stringify({ to: state.activeFriend.id, attachment_id: upload.id }));
+  } catch (error) {
+    const friendly =
+      error.message === "invalid request"
+        ? "Only PNG, JPEG, GIF, or WebP images are supported."
+        : error.message;
+    showToast(friendly, "error");
+  } finally {
+    attachButton.disabled = false;
+    updateComposerState();
+  }
+}
+
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     state.mode = tab.dataset.mode;
@@ -481,6 +547,12 @@ document.querySelectorAll(".tab").forEach((tab) => {
 authForm.addEventListener("submit", authenticate);
 addFriendForm.addEventListener("submit", sendFriendRequest);
 messageForm.addEventListener("submit", sendMessage);
+attachButton.addEventListener("click", () => imageInput.click());
+imageInput.addEventListener("change", () => {
+  const [file] = imageInput.files;
+  imageInput.value = "";
+  sendImage(file);
+});
 $("#refresh-button").addEventListener("click", loadContacts);
 $("#logout-button").addEventListener("click", clearSession);
 
