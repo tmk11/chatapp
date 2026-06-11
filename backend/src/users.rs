@@ -11,6 +11,9 @@ pub struct User {
     pub id: Uuid,
     pub phone: String,
     pub display_name: String,
+    /// Set when the user's last WebSocket connection closes. `None` for users
+    /// who never connected (or, in the in-memory store, since last restart).
+    pub last_seen_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -30,6 +33,7 @@ pub trait UserStore: Send + Sync {
     ) -> Result<User, AppError>;
     async fn find_by_phone(&self, phone: &str) -> Option<StoredUser>;
     async fn find_by_id(&self, id: Uuid) -> Option<User>;
+    async fn set_last_seen(&self, id: Uuid, at: DateTime<Utc>);
 }
 
 #[derive(Clone, Default)]
@@ -56,6 +60,7 @@ impl UserStore for InMemoryUserStore {
             id: Uuid::new_v4(),
             phone: normalized_phone.clone(),
             display_name,
+            last_seen_at: None,
             created_at: Utc::now(),
         };
         phone_index.insert(normalized_phone, user.id);
@@ -82,6 +87,12 @@ impl UserStore for InMemoryUserStore {
             .await
             .get(&id)
             .map(|stored| stored.user.clone())
+    }
+
+    async fn set_last_seen(&self, id: Uuid, at: DateTime<Utc>) {
+        if let Some(stored) = self.inner.write().await.get_mut(&id) {
+            stored.user.last_seen_at = Some(at);
+        }
     }
 }
 

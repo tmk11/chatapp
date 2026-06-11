@@ -93,11 +93,20 @@
                 <div>
                   <p class="eyebrow">Chatting with</p>
                   <h2 id="chat-title">Friend</h2>
+                  <p class="presence-line" id="presence-line"></p>
                 </div>
                 <span class="status-pill" id="socket-status">Disconnected</span>
               </div>
 
               <div class="messages" id="messages" role="log" aria-live="polite"></div>
+
+              <div class="reply-banner hidden" id="reply-banner">
+                <div class="reply-banner-text">
+                  <strong id="reply-banner-name">Replying</strong>
+                  <span id="reply-banner-body"></span>
+                </div>
+                <button class="ghost-button small" type="button" id="cancel-reply" aria-label="Cancel reply">✕</button>
+              </div>
 
               <form id="message-form" class="message-form">
                 <input id="image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" class="hidden" />

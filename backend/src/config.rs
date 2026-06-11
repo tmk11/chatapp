@@ -8,6 +8,9 @@ pub struct Config {
     pub jwt_secret: String,
     pub jwt_ttl_seconds: i64,
     pub frontend_dir: PathBuf,
+    /// When set, all stores use Postgres; otherwise development in-memory
+    /// stores are used and data is lost on restart.
+    pub database_url: Option<String>,
 }
 
 impl Config {
@@ -29,6 +32,7 @@ impl Config {
         let frontend_dir = env::var("FRONTEND_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| default_frontend_dir());
+        let database_url = env::var("DATABASE_URL").ok().filter(|url| !url.is_empty());
 
         Ok(Self {
             host,
@@ -36,6 +40,7 @@ impl Config {
             jwt_secret,
             jwt_ttl_seconds,
             frontend_dir,
+            database_url,
         })
     }
 

@@ -1,4 +1,5 @@
 use crate::{auth, error::AppError, state::AppState};
+use async_trait::async_trait;
 use axum::{
     Json,
     body::Bytes,
@@ -30,25 +31,32 @@ struct AttachmentMap {
     total_bytes: usize,
 }
 
+#[async_trait]
+pub trait AttachmentStore: Send + Sync {
+    /// Validates and stores raw image bytes. The content type is derived from
+    /// the file's magic bytes, never from client-supplied headers.
+    async fn store(&self, owner_id: Uuid, bytes: Bytes) -> Result<(Uuid, String), AppError>;
+
+    /// Binds an uploaded attachment to a message from `owner_id` to
+    /// `recipient_id`. Fails if the attachment does not belong to the sender
+    /// or was already used in another message.
+    async fn attach(&self, id: Uuid, owner_id: Uuid, recipient_id: Uuid) -> Result<(), AppError>;
+
+    /// Returns the image for the uploader or, once attached, the recipient.
+    async fn fetch(&self, id: Uuid, user_id: Uuid) -> Result<(String, Bytes), AppError>;
+
+    async fn remove(&self, id: Uuid) -> Result<(), AppError>;
+}
+
 #[derive(Clone, Default)]
 pub struct InMemoryAttachmentStore {
     inner: Arc<RwLock<AttachmentMap>>,
 }
 
-impl InMemoryAttachmentStore {
-    /// Validates and stores raw image bytes. The content type is derived from
-    /// the file's magic bytes, never from client-supplied headers.
-    pub async fn store(
-        &self,
-        owner_id: Uuid,
-        bytes: Bytes,
-    ) -> Result<(Uuid, &'static str), AppError> {
-        if bytes.len() > MAX_ATTACHMENT_BYTES {
-            return Err(AppError::PayloadTooLarge);
-        }
-        let content_type = sniff_image_type(&bytes).ok_or(AppError::BadRequest(
-            "only png, jpeg, gif, or webp images are supported".to_owned(),
-        ))?;
+#[async_trait]
+impl AttachmentStore for InMemoryAttachmentStore {
+    async fn store(&self, owner_id: Uuid, bytes: Bytes) -> Result<(Uuid, String), AppError> {
+        let content_type = validate_image(&bytes)?;
 
         let mut inner = self.inner.write().await;
         if inner.total_bytes + bytes.len() > MAX_TOTAL_ATTACHMENT_BYTES {
@@ -65,18 +73,10 @@ impl InMemoryAttachmentStore {
                 bytes,
             },
         );
-        Ok((id, content_type))
+        Ok((id, content_type.to_owned()))
     }
 
-    /// Binds an uploaded attachment to a message from `owner_id` to
-    /// `recipient_id`. Fails if the attachment does not belong to the sender
-    /// or was already used in another message.
-    pub async fn attach(
-        &self,
-        id: Uuid,
-        owner_id: Uuid,
-        recipient_id: Uuid,
-    ) -> Result<(), AppError> {
+    async fn attach(&self, id: Uuid, owner_id: Uuid, recipient_id: Uuid) -> Result<(), AppError> {
         let mut inner = self.inner.write().await;
         let attachment = inner.attachments.get_mut(&id).ok_or(AppError::NotFound)?;
         if attachment.owner_id != owner_id {
@@ -89,23 +89,34 @@ impl InMemoryAttachmentStore {
         Ok(())
     }
 
-    /// Returns the image for the uploader or, once attached, the recipient.
-    pub async fn fetch(&self, id: Uuid, user_id: Uuid) -> Result<(&'static str, Bytes), AppError> {
+    async fn fetch(&self, id: Uuid, user_id: Uuid) -> Result<(String, Bytes), AppError> {
         let inner = self.inner.read().await;
         let attachment = inner.attachments.get(&id).ok_or(AppError::NotFound)?;
         let allowed = attachment.owner_id == user_id || attachment.recipient_id == Some(user_id);
         if !allowed {
             return Err(AppError::NotFound);
         }
-        Ok((attachment.content_type, attachment.bytes.clone()))
+        Ok((attachment.content_type.to_owned(), attachment.bytes.clone()))
     }
 
-    pub async fn remove(&self, id: Uuid) {
+    async fn remove(&self, id: Uuid) -> Result<(), AppError> {
         let mut inner = self.inner.write().await;
         if let Some(attachment) = inner.attachments.remove(&id) {
             inner.total_bytes -= attachment.bytes.len();
         }
+        Ok(())
     }
+}
+
+/// Shared validation for both stores: enforces the per-image size limit and
+/// derives the content type from magic bytes, never from client headers.
+pub fn validate_image(bytes: &Bytes) -> Result<&'static str, AppError> {
+    if bytes.len() > MAX_ATTACHMENT_BYTES {
+        return Err(AppError::PayloadTooLarge);
+    }
+    sniff_image_type(bytes).ok_or(AppError::BadRequest(
+        "only png, jpeg, gif, or webp images are supported".to_owned(),
+    ))
 }
 
 fn sniff_image_type(bytes: &[u8]) -> Option<&'static str> {
@@ -125,7 +136,7 @@ fn sniff_image_type(bytes: &[u8]) -> Option<&'static str> {
 #[derive(Serialize)]
 pub struct UploadResponse {
     id: Uuid,
-    content_type: &'static str,
+    content_type: String,
     size: usize,
 }
 
@@ -161,7 +172,10 @@ pub async fn download(
     Ok((
         [
             (header::CONTENT_TYPE, content_type),
-            (header::CACHE_CONTROL, "private, max-age=31536000"),
+            (
+                header::CACHE_CONTROL,
+                "private, max-age=31536000".to_owned(),
+            ),
         ],
         bytes,
     )
@@ -170,7 +184,7 @@ pub async fn download(
 
 #[cfg(test)]
 mod tests {
-    use super::{InMemoryAttachmentStore, sniff_image_type};
+    use super::{AttachmentStore, InMemoryAttachmentStore, sniff_image_type};
     use axum::body::Bytes;
     use uuid::Uuid;
 
@@ -216,7 +230,7 @@ mod tests {
         assert!(store.fetch(id, bob).await.is_ok());
         assert!(store.fetch(id, mallory).await.is_err());
 
-        store.remove(id).await;
+        store.remove(id).await.unwrap();
         assert!(store.fetch(id, alice).await.is_err());
     }
 

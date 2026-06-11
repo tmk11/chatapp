@@ -1,9 +1,11 @@
 use crate::{
     auth,
     error::AppError,
+    messages::MessageView,
     state::AppState,
-    users::{User, UserStore, normalize_phone},
+    users::{User, normalize_phone},
 };
+use async_trait::async_trait;
 use axum::{
     Json,
     extract::{Path, State},
@@ -32,31 +34,47 @@ pub enum RequestOutcome {
     Accepted,
 }
 
+#[async_trait]
+pub trait FriendStore: Send + Sync {
+    async fn are_friends(&self, a: Uuid, b: Uuid) -> Result<bool, AppError>;
+    async fn send_request(&self, from: Uuid, to: Uuid) -> Result<RequestOutcome, AppError>;
+    async fn incoming_requests(&self, user_id: Uuid) -> Result<Vec<FriendRequest>, AppError>;
+    async fn respond(
+        &self,
+        request_id: Uuid,
+        user_id: Uuid,
+        accept: bool,
+    ) -> Result<FriendRequest, AppError>;
+    async fn friends_of(&self, user_id: Uuid) -> Result<Vec<Uuid>, AppError>;
+}
+
+pub fn friendship_key(a: Uuid, b: Uuid) -> (Uuid, Uuid) {
+    if a <= b { (a, b) } else { (b, a) }
+}
+
 #[derive(Clone, Default)]
 pub struct InMemoryFriendStore {
     requests: Arc<RwLock<HashMap<Uuid, FriendRequest>>>,
     friendships: Arc<RwLock<HashSet<(Uuid, Uuid)>>>,
 }
 
-fn friendship_key(a: Uuid, b: Uuid) -> (Uuid, Uuid) {
-    if a <= b { (a, b) } else { (b, a) }
-}
-
-impl InMemoryFriendStore {
-    pub async fn are_friends(&self, a: Uuid, b: Uuid) -> bool {
-        self.friendships
+#[async_trait]
+impl FriendStore for InMemoryFriendStore {
+    async fn are_friends(&self, a: Uuid, b: Uuid) -> Result<bool, AppError> {
+        Ok(self
+            .friendships
             .read()
             .await
-            .contains(&friendship_key(a, b))
+            .contains(&friendship_key(a, b)))
     }
 
-    pub async fn send_request(&self, from: Uuid, to: Uuid) -> Result<RequestOutcome, AppError> {
+    async fn send_request(&self, from: Uuid, to: Uuid) -> Result<RequestOutcome, AppError> {
         if from == to {
             return Err(AppError::BadRequest(
                 "cannot send a friend request to yourself".to_owned(),
             ));
         }
-        if self.are_friends(from, to).await {
+        if self.are_friends(from, to).await? {
             return Err(AppError::Conflict);
         }
 
@@ -93,7 +111,7 @@ impl InMemoryFriendStore {
         Ok(RequestOutcome::Pending(request_id))
     }
 
-    pub async fn incoming_requests(&self, user_id: Uuid) -> Vec<FriendRequest> {
+    async fn incoming_requests(&self, user_id: Uuid) -> Result<Vec<FriendRequest>, AppError> {
         let mut incoming = self
             .requests
             .read()
@@ -103,10 +121,10 @@ impl InMemoryFriendStore {
             .cloned()
             .collect::<Vec<_>>();
         incoming.sort_by_key(|request| request.created_at);
-        incoming
+        Ok(incoming)
     }
 
-    pub async fn respond(
+    async fn respond(
         &self,
         request_id: Uuid,
         user_id: Uuid,
@@ -130,8 +148,9 @@ impl InMemoryFriendStore {
         Ok(request)
     }
 
-    pub async fn friends_of(&self, user_id: Uuid) -> Vec<Uuid> {
-        self.friendships
+    async fn friends_of(&self, user_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+        Ok(self
+            .friendships
             .read()
             .await
             .iter()
@@ -144,7 +163,7 @@ impl InMemoryFriendStore {
                     None
                 }
             })
-            .collect()
+            .collect())
     }
 }
 
@@ -175,6 +194,16 @@ pub struct RespondResponse {
     status: &'static str,
 }
 
+/// One sidebar entry: the friend plus everything needed to render the
+/// WhatsApp-style conversation list.
+#[derive(Debug, Serialize)]
+pub struct FriendSummary {
+    pub user: User,
+    pub online: bool,
+    pub unread_count: usize,
+    pub last_message: Option<MessageView>,
+}
+
 /// POST /friends/requests — authenticated; sends a friend request to the user
 /// owning the given phone number. If that user already sent us a request, the
 /// two requests are merged and the friendship is created immediately.
@@ -202,8 +231,8 @@ pub async fn send_request(
 pub async fn list_requests(
     State(state): State<AppState>,
     auth::CurrentUser(user): auth::CurrentUser,
-) -> Json<Vec<IncomingRequestView>> {
-    let incoming = state.friends.incoming_requests(user.id).await;
+) -> Result<Json<Vec<IncomingRequestView>>, AppError> {
+    let incoming = state.friends.incoming_requests(user.id).await?;
     let mut views = Vec::with_capacity(incoming.len());
     for request in incoming {
         if let Some(sender) = state.users.find_by_id(request.from_user_id).await {
@@ -214,7 +243,7 @@ pub async fn list_requests(
             });
         }
     }
-    Json(views)
+    Ok(Json(views))
 }
 
 /// POST /friends/requests/{id} — authenticated; accepts or declines a pending
@@ -234,25 +263,39 @@ pub async fn respond(
     }))
 }
 
-/// GET /friends — authenticated; lists the current user's friends.
+/// GET /friends — authenticated; returns the conversation list: each friend
+/// with presence, unread count, and the latest visible message, sorted by
+/// most recent activity (friends without messages last, alphabetically).
 pub async fn list_friends(
     State(state): State<AppState>,
     auth::CurrentUser(user): auth::CurrentUser,
-) -> Json<Vec<User>> {
-    let friend_ids = state.friends.friends_of(user.id).await;
-    let mut friends = Vec::with_capacity(friend_ids.len());
+) -> Result<Json<Vec<FriendSummary>>, AppError> {
+    let friend_ids = state.friends.friends_of(user.id).await?;
+    let mut summaries = Vec::with_capacity(friend_ids.len());
     for friend_id in friend_ids {
-        if let Some(friend) = state.users.find_by_id(friend_id).await {
-            friends.push(friend);
-        }
+        let Some(friend) = state.users.find_by_id(friend_id).await else {
+            continue;
+        };
+        let summary = state.messages.summary(user.id, friend_id).await?;
+        summaries.push(FriendSummary {
+            online: state.user_hub.is_online(friend.id).await,
+            user: friend,
+            unread_count: summary.unread_count,
+            last_message: summary.last_message,
+        });
     }
-    friends.sort_by(|a, b| a.display_name.cmp(&b.display_name));
-    Json(friends)
+    summaries.sort_by(|a, b| {
+        let a_at = a.last_message.as_ref().map(|message| message.sent_at);
+        let b_at = b.last_message.as_ref().map(|message| message.sent_at);
+        b_at.cmp(&a_at)
+            .then_with(|| a.user.display_name.cmp(&b.user.display_name))
+    });
+    Ok(Json(summaries))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{InMemoryFriendStore, RequestOutcome};
+    use super::{FriendStore, InMemoryFriendStore, RequestOutcome};
     use uuid::Uuid;
 
     #[tokio::test]
@@ -266,12 +309,12 @@ mod tests {
             RequestOutcome::Pending(id) => id,
             other => panic!("expected pending request, got {other:?}"),
         };
-        assert!(!store.are_friends(alice, bob).await);
+        assert!(!store.are_friends(alice, bob).await.unwrap());
 
         store.respond(request_id, bob, true).await.unwrap();
-        assert!(store.are_friends(alice, bob).await);
-        assert!(store.are_friends(bob, alice).await);
-        assert_eq!(store.friends_of(alice).await, vec![bob]);
+        assert!(store.are_friends(alice, bob).await.unwrap());
+        assert!(store.are_friends(bob, alice).await.unwrap());
+        assert_eq!(store.friends_of(alice).await.unwrap(), vec![bob]);
     }
 
     #[tokio::test]
@@ -285,8 +328,8 @@ mod tests {
             panic!("expected pending request");
         };
         store.respond(request_id, bob, false).await.unwrap();
-        assert!(!store.are_friends(alice, bob).await);
-        assert!(store.incoming_requests(bob).await.is_empty());
+        assert!(!store.are_friends(alice, bob).await.unwrap());
+        assert!(store.incoming_requests(bob).await.unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -298,9 +341,9 @@ mod tests {
         store.send_request(alice, bob).await.unwrap();
         let outcome = store.send_request(bob, alice).await.unwrap();
         assert_eq!(outcome, RequestOutcome::Accepted);
-        assert!(store.are_friends(alice, bob).await);
-        assert!(store.incoming_requests(alice).await.is_empty());
-        assert!(store.incoming_requests(bob).await.is_empty());
+        assert!(store.are_friends(alice, bob).await.unwrap());
+        assert!(store.incoming_requests(alice).await.unwrap().is_empty());
+        assert!(store.incoming_requests(bob).await.unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -315,7 +358,7 @@ mod tests {
             panic!("expected pending request");
         };
         assert!(store.respond(request_id, mallory, true).await.is_err());
-        assert!(!store.are_friends(alice, bob).await);
+        assert!(!store.are_friends(alice, bob).await.unwrap());
     }
 
     #[tokio::test]
@@ -333,6 +376,6 @@ mod tests {
             panic!("expected pending request");
         };
         assert_eq!(first, second);
-        assert_eq!(store.incoming_requests(bob).await.len(), 1);
+        assert_eq!(store.incoming_requests(bob).await.unwrap().len(), 1);
     }
 }
