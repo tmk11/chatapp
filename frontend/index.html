@@ -13,7 +13,7 @@
         <div class="card auth-card">
           <p class="eyebrow">Secure Chat</p>
           <h1 id="auth-title">Login or sign up</h1>
-          <p class="muted">Create an account, then make a room and start chatting.</p>
+          <p class="muted">Create an account, add friends by phone number, and start chatting.</p>
 
           <div class="tabs" role="tablist" aria-label="Authentication mode">
             <button class="tab active" type="button" data-mode="login" role="tab" aria-selected="true">Login</button>
@@ -41,8 +41,8 @@
       <section class="app-screen hidden" id="app-screen" aria-label="Chat workspace">
         <header class="topbar card">
           <div>
-            <p class="eyebrow">Rooms</p>
-            <h1>Chat rooms</h1>
+            <p class="eyebrow">Chats</p>
+            <h1>Messages</h1>
           </div>
           <div class="user-actions">
             <div class="user-chip">
@@ -57,37 +57,42 @@
         </header>
 
         <div class="workspace">
-          <aside class="card rooms-panel">
+          <aside class="card friends-panel">
             <div class="section-header">
-              <h2>Your rooms</h2>
-              <button class="ghost-button small" type="button" id="refresh-rooms-button">Refresh</button>
+              <h2>Friends</h2>
+              <button class="ghost-button small" type="button" id="refresh-button">Refresh</button>
             </div>
 
-            <form id="room-form" class="room-form">
+            <form id="add-friend-form" class="add-friend-form">
               <label>
-                New room name
-                <input id="room-name" type="text" maxlength="80" placeholder="Family chat" required />
+                Add a friend by phone
+                <input id="friend-phone" type="tel" maxlength="16" placeholder="+15550002222" required />
               </label>
-              <button class="secondary-button" type="submit" id="create-room-button">Create room</button>
+              <button class="secondary-button" type="submit" id="add-friend-button">Send friend request</button>
             </form>
 
-            <div class="room-list" id="room-list" aria-live="polite">
-              <div class="empty-state">No rooms yet. Create one to begin.</div>
+            <div class="requests-section hidden" id="requests-section">
+              <h3>Friend requests</h3>
+              <div class="request-list" id="request-list" aria-live="polite"></div>
+            </div>
+
+            <div class="friend-list" id="friend-list" aria-live="polite">
+              <div class="empty-state">No friends yet. Send a request to begin.</div>
             </div>
           </aside>
 
-          <section class="card chat-panel" aria-labelledby="room-title">
+          <section class="card chat-panel" aria-labelledby="chat-title">
             <div class="chat-placeholder" id="chat-placeholder">
               <div class="empty-icon" aria-hidden="true">💬</div>
-              <h2>Select or create a room</h2>
-              <p class="muted">Messages appear after you connect to a room.</p>
+              <h2>Select a friend</h2>
+              <p class="muted">Your conversation history appears after you pick a friend.</p>
             </div>
 
             <div class="chat-area hidden" id="chat-area">
               <div class="section-header chat-header">
                 <div>
-                  <p class="eyebrow">Active room</p>
-                  <h2 id="room-title">Room</h2>
+                  <p class="eyebrow">Chatting with</p>
+                  <h2 id="chat-title">Friend</h2>
                 </div>
                 <span class="status-pill" id="socket-status">Disconnected</span>
               </div>

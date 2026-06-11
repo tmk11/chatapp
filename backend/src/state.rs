@@ -1,6 +1,6 @@
 use crate::{
-    auth::AuthService, config::Config, rooms::InMemoryRoomStore, users::InMemoryUserStore,
-    ws::RoomHub,
+    auth::AuthService, config::Config, friends::InMemoryFriendStore,
+    messages::InMemoryMessageStore, users::InMemoryUserStore, ws::UserHub,
 };
 use std::sync::Arc;
 
@@ -8,8 +8,9 @@ use std::sync::Arc;
 pub struct AppState {
     pub auth: Arc<AuthService>,
     pub users: Arc<InMemoryUserStore>,
-    pub rooms: Arc<InMemoryRoomStore>,
-    pub room_hub: RoomHub,
+    pub friends: Arc<InMemoryFriendStore>,
+    pub messages: Arc<InMemoryMessageStore>,
+    pub user_hub: UserHub,
 }
 
 impl AppState {
@@ -19,8 +20,9 @@ impl AppState {
         Self {
             auth,
             users,
-            rooms: Arc::new(InMemoryRoomStore::default()),
-            room_hub: RoomHub::default(),
+            friends: Arc::new(InMemoryFriendStore::default()),
+            messages: Arc::new(InMemoryMessageStore::default()),
+            user_hub: UserHub::default(),
         }
     }
 }

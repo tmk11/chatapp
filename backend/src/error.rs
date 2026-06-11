@@ -10,6 +10,10 @@ use thiserror::Error;
 pub enum AppError {
     #[error("authentication failed")]
     Unauthorized,
+    #[error("forbidden")]
+    Forbidden,
+    #[error("not found")]
+    NotFound,
     #[error("resource conflict")]
     Conflict,
     #[error("invalid request: {0}")]
@@ -27,6 +31,8 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = match self {
             AppError::Unauthorized => StatusCode::UNAUTHORIZED,
+            AppError::Forbidden => StatusCode::FORBIDDEN,
+            AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::Conflict => StatusCode::CONFLICT,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
@@ -42,6 +48,8 @@ impl AppError {
     fn safe_message(&self) -> &'static str {
         match self {
             AppError::Unauthorized => "authentication failed",
+            AppError::Forbidden => "forbidden",
+            AppError::NotFound => "not found",
             AppError::Conflict => "resource conflict",
             AppError::BadRequest(_) => "invalid request",
             AppError::Internal => "internal server error",
