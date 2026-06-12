@@ -9,6 +9,7 @@ services:
       JWT_SECRET: change-me-use-a-32-byte-random-secret-in-production
       JWT_TTL_SECONDS: 3600
       FRONTEND_DIR: /app/frontend
+      DATABASE_URL: postgres://chatapp:chatapp@postgres:5432/chatapp
       RUST_LOG: secure_chat_backend=debug,tower_http=info
     ports:
       - "8080:8080"

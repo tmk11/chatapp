@@ -5,6 +5,7 @@ mod config;
 mod error;
 mod friends;
 mod messages;
+mod pg;
 mod security;
 mod state;
 mod users;
@@ -23,7 +24,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = Config::from_env()?;
-    let app = app::build_router(config.clone());
+    let app = app::build_router(config.clone()).await?;
     let listener = TcpListener::bind(config.bind_addr())
         .await
         .with_context(|| format!("failed to bind {}", config.bind_addr()))?;

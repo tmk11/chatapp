@@ -12,9 +12,9 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-pub fn build_router(config: Config) -> Router {
+pub async fn build_router(config: Config) -> anyhow::Result<Router> {
     let frontend_dir = config.frontend_dir.clone();
-    let state = AppState::new(config);
+    let state = AppState::new(config).await?;
     let (content_type_name, content_type_value) = security::content_type_options_header();
     let (frame_name, frame_value) = security::frame_options_header();
 
@@ -44,7 +44,7 @@ pub fn build_router(config: Config) -> Router {
             attachments::MAX_ATTACHMENT_BYTES + 1024,
         ));
 
-    Router::new()
+    Ok(Router::new()
         .merge(api)
         .merge(media)
         .fallback_service(ServeDir::new(frontend_dir))
@@ -55,7 +55,7 @@ pub fn build_router(config: Config) -> Router {
             content_type_value,
         ))
         .layer(SetResponseHeaderLayer::overriding(frame_name, frame_value))
-        .layer(CorsLayer::new().allow_origin(Any))
+        .layer(CorsLayer::new().allow_origin(Any)))
 }
 
 #[derive(Serialize)]

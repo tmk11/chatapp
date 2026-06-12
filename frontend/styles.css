@@ -248,7 +248,7 @@ h2 { margin-bottom: 0; font-size: 1.25rem; letter-spacing: -0.03em; }
 
 .friend-item {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.3rem;
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -263,7 +263,68 @@ h2 { margin-bottom: 0; font-size: 1.25rem; letter-spacing: -0.03em; }
   background: rgba(6, 182, 212, 0.14);
 }
 
-.friend-item span { color: var(--muted); font-size: 0.78rem; }
+.friend-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.friend-top strong {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.friend-time { color: var(--muted); font-size: 0.72rem; flex: 0 0 auto; }
+
+.friend-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.friend-preview {
+  color: var(--muted);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unread-badge {
+  flex: 0 0 auto;
+  min-width: 1.4rem;
+  border-radius: 999px;
+  padding: 0.1rem 0.42rem;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.presence-dot {
+  flex: 0 0 auto;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.45);
+}
+
+.presence-dot.online { background: var(--success); }
+
+.presence-line {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  min-height: 1.1em;
+}
+
+.presence-line.online { color: var(--success); }
+.presence-line.typing { color: var(--primary-2); font-style: italic; }
 
 .chat-panel { display: grid; }
 
@@ -371,6 +432,108 @@ h2 { margin-bottom: 0; font-size: 1.25rem; letter-spacing: -0.03em; }
 .message-action.danger { color: var(--danger); }
 .message.mine .message-action { color: rgba(255, 255, 255, 0.85); }
 .message.mine .message-action.danger { color: #fecdd3; }
+
+.ticks {
+  margin-left: auto;
+  color: rgba(226, 232, 240, 0.7);
+  letter-spacing: -0.12em;
+}
+
+.ticks.read { color: #38bdf8; }
+.message.mine .ticks.read { color: #a5f3fc; }
+
+.reply-quote {
+  display: grid;
+  gap: 0.1rem;
+  margin-bottom: 0.4rem;
+  border-left: 3px solid var(--primary-2);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  background: rgba(2, 6, 23, 0.35);
+  font-size: 0.8rem;
+}
+
+.reply-quote strong { color: var(--primary-2); font-size: 0.72rem; }
+.reply-quote span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(226, 232, 240, 0.8);
+}
+.reply-quote.deleted span { font-style: italic; opacity: 0.7; }
+
+.reaction-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.reaction-chips:not(:empty) { margin-top: 0.35rem; }
+
+.reaction-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+  background: rgba(2, 6, 23, 0.55);
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.reaction-chip.mine {
+  border-color: rgba(6, 182, 212, 0.66);
+  background: rgba(6, 182, 212, 0.18);
+}
+
+.message-actions { position: relative; }
+
+.reaction-picker {
+  position: absolute;
+  bottom: 1.6rem;
+  left: 0;
+  z-index: 5;
+  display: flex;
+  gap: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.3rem 0.45rem;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+}
+
+.reaction-picker button {
+  border: 0;
+  padding: 0.1rem 0.2rem;
+  background: transparent;
+  font-size: 1.05rem;
+}
+
+.reply-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary-2);
+  border-radius: 12px;
+  padding: 0.5rem 0.7rem;
+  background: rgba(2, 6, 23, 0.5);
+}
+
+.reply-banner-text {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+  font-size: 0.82rem;
+}
+
+.reply-banner-text strong { color: var(--primary-2); font-size: 0.74rem; }
+.reply-banner-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
 
 .message-form {
   display: grid;

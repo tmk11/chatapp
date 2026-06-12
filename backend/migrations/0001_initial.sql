@@ -1,27 +1,22 @@
--- Planned production schema. The current development server uses in-memory storage.
--- Apply this migration when the SQLx Postgres adapter is implemented.
+-- Initial production schema for the secure chat backend.
+-- Applied automatically at startup when DATABASE_URL is configured.
+--
+-- Rollback notes: this is the initial migration; to roll back drop the
+-- application schema entirely:
+--   DROP TABLE IF EXISTS message_reactions, message_deletions, messages,
+--     attachments, friendships, friend_requests, users CASCADE;
+--   DROP TABLE IF EXISTS _sqlx_migrations;
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE users (
     id UUID PRIMARY KEY,
     phone TEXT NOT NULL UNIQUE,
     display_name TEXT NOT NULL,
     password_hash TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    last_seen_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS devices (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    device_name TEXT NOT NULL,
-    public_identity_key BYTEA,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked_at TIMESTAMPTZ
-);
-
-CREATE TABLE IF NOT EXISTS friend_requests (
+CREATE TABLE friend_requests (
     id UUID PRIMARY KEY,
     from_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     to_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -30,8 +25,10 @@ CREATE TABLE IF NOT EXISTS friend_requests (
     CHECK (from_user_id <> to_user_id)
 );
 
+CREATE INDEX friend_requests_to_user_idx ON friend_requests (to_user_id, created_at);
+
 -- Friendships store the unordered pair as (least, greatest) user id.
-CREATE TABLE IF NOT EXISTS friendships (
+CREATE TABLE friendships (
     user_a UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     user_b UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -39,52 +36,52 @@ CREATE TABLE IF NOT EXISTS friendships (
     CHECK (user_a < user_b)
 );
 
-CREATE TABLE IF NOT EXISTS conversations (
+CREATE INDEX friendships_user_b_idx ON friendships (user_b);
+
+-- Image bytes currently live in Postgres; move to encrypted object storage
+-- before production scale (see PROJECT_CONTEXT.md roadmap).
+CREATE TABLE attachments (
     id UUID PRIMARY KEY,
-    kind TEXT NOT NULL CHECK (kind IN ('direct', 'group')),
-    title TEXT,
-    created_by UUID REFERENCES users(id),
+    owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    recipient_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    content_type TEXT NOT NULL,
+    bytes BYTEA NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS conversation_members (
-    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role TEXT NOT NULL CHECK (role IN ('member', 'admin', 'owner')),
-    joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (conversation_id, user_id)
-);
-
-CREATE TABLE IF NOT EXISTS messages (
+CREATE TABLE messages (
     id UUID PRIMARY KEY,
-    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    sender_id UUID NOT NULL REFERENCES users(id),
-    client_message_id TEXT NOT NULL,
-    encrypted_payload BYTEA NOT NULL,
+    sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    recipient_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('text', 'image')),
+    body TEXT NOT NULL,
+    attachment_id UUID REFERENCES attachments(id) ON DELETE SET NULL,
+    reply_to UUID REFERENCES messages(id) ON DELETE SET NULL,
     sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    deleted_at TIMESTAMPTZ,
-    UNIQUE (conversation_id, sender_id, client_message_id)
+    delivered_at TIMESTAMPTZ,
+    read_at TIMESTAMPTZ,
+    deleted_for_everyone BOOLEAN NOT NULL DEFAULT FALSE
 );
 
-CREATE INDEX IF NOT EXISTS messages_conversation_sent_at_idx
-    ON messages (conversation_id, sent_at DESC);
+-- Conversation scans always address the unordered participant pair.
+CREATE INDEX messages_conversation_idx
+    ON messages (LEAST(sender_id, recipient_id), GREATEST(sender_id, recipient_id), sent_at);
 
--- Per-user "delete for me". "Delete for everyone" uses messages.deleted_at.
-CREATE TABLE IF NOT EXISTS message_deletions (
+-- Unread lookups: messages to me that are not yet read.
+CREATE INDEX messages_unread_idx ON messages (recipient_id) WHERE read_at IS NULL;
+
+-- Per-user "delete for me". "Delete for everyone" uses messages.deleted_for_everyone.
+CREATE TABLE message_deletions (
     message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     deleted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (message_id, user_id)
 );
 
--- Media metadata; encrypted bytes live in object storage, keyed by storage_key.
-CREATE TABLE IF NOT EXISTS attachments (
-    id UUID PRIMARY KEY,
-    owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
-    content_type TEXT NOT NULL,
-    byte_size BIGINT NOT NULL,
-    storage_key TEXT NOT NULL,
+CREATE TABLE message_reactions (
+    message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    emoji TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    deleted_at TIMESTAMPTZ
+    PRIMARY KEY (message_id, user_id, emoji)
 );

@@ -11,16 +11,19 @@ Core user-facing capabilities:
 1. Account registration and login by phone number.
 2. Friend requests by phone number; only friends can message each other. There are no chat rooms — this was an explicit product decision (2026-06) replacing the earlier room feature.
 3. 1:1 real-time text messaging (group chats may return later, but contact-based, not room-based).
-4. Stored conversation history.
+4. Stored conversation history (durable in Postgres when DATABASE_URL is set).
 5. Message deletion: delete for me (per-user hide) and delete for everyone (sender-only tombstone), WhatsApp-style.
 6. Image messages (implemented as a development baseline; production needs encrypted object storage, malware scanning, and expiring URLs).
-7. Message delivery/read receipts.
-8. Offline message sync.
-9. Other media attachments (video, audio, documents).
-10. Push notifications.
-11. Contact discovery with privacy controls.
-12. End-to-end encryption for message content.
-13. Abuse prevention, rate limiting, reporting, and moderation workflows.
+7. Message delivery/read receipts (implemented: client-acked delivery, conversation-level read).
+8. Typing indicators and online/offline presence with last-seen (implemented).
+9. Conversation list with unread counts and last-message previews (implemented).
+10. Replies (quoted messages) and emoji reactions (implemented with a fixed emoji set).
+11. Offline message sync (history reload works; per-device cursors still pending).
+12. Other media attachments (video, audio, documents).
+13. Push notifications.
+14. Contact discovery with privacy controls.
+15. End-to-end encryption for message content.
+16. Abuse prevention, rate limiting, reporting, and moderation workflows.
 
 ## Current implementation
 
@@ -29,13 +32,14 @@ The repository currently contains a Rust backend scaffold in `backend/` plus a s
 - Axum HTTP server and Tokio async runtime.
 - JWT authentication.
 - Argon2 password hashing.
-- Development-only in-memory user store.
-- Development-only in-memory friend store (`friends.rs`): friend requests by phone number, accept/decline, mutual-request auto-accept, friendship checks. Friendships are stored as unordered user-id pairs.
-- Development-only in-memory message store (`messages.rs`): 1:1 conversations keyed by the unordered participant pair, text and image message kinds, full history retained, per-user delete-for-me hiding, and sender-only delete-for-everyone tombstones (which also purge image attachments).
-- Development-only in-memory attachment store (`attachments.rs`): raw image upload (PNG/JPEG/GIF/WebP, max 5 MiB per image, 256 MiB total) with magic-byte content-type sniffing, uploader-only access until the image is sent, single-use binding to one message, and authenticated download for the two participants only.
-- Development-only per-user WebSocket fanout (`ws.rs`): one connection per session, frames are `{"to": <friend user id>, "body": ...}` for text or `{"to": ..., "attachment_id": ...}` for images (exactly one of the two), sending requires friendship, and delivered events are typed (`message`, `message_deleted`, `error`).
+- Storage behind per-domain traits (`UserStore`, `FriendStore`, `MessageStore`, `AttachmentStore`) with two implementations each: durable Postgres stores (`pg.rs`, selected when DATABASE_URL is set; SQLx migrations in `backend/migrations/` run automatically at startup) and in-memory development stores (the default).
+- Friend store (`friends.rs`): friend requests by phone number, accept/decline, mutual-request auto-accept, friendship checks. Friendships are stored as unordered user-id pairs. `GET /friends` returns the conversation list: each friend with presence, unread count, and last visible message, sorted by latest activity.
+- Message store (`messages.rs`): 1:1 conversations keyed by the unordered participant pair, text and image message kinds, replies (validated to the same conversation, previews embedded at read time), emoji reactions (fixed set 👍 ❤️ 😂 😮 😢 🙏, toggled, participants only, cleared on tombstone), delivery/read receipt timestamps, per-user delete-for-me hiding, and sender-only delete-for-everyone tombstones (which also purge image attachments).
+- Attachment store (`attachments.rs`): raw image upload (PNG/JPEG/GIF/WebP, max 5 MiB per image) with magic-byte content-type sniffing, uploader-only access until the image is sent, single-use binding to one message, and authenticated download for the two participants only. The in-memory store caps total bytes at 256 MiB; the Postgres store keeps bytes in the `attachments` table (object storage is a roadmap item).
+- Per-user WebSocket fanout with presence tracking (`ws.rs`): one connection per session, JSON frames tagged with `type` (`message`, `delivered`, `read`, `typing`, `reaction` inbound; plus `message_deleted`, `presence`, `error` outbound). Connection counting per user drives presence: friends receive `presence` events on first-connect/last-disconnect, and `users.last_seen_at` is persisted on disconnect. Sending requires friendship.
+- Receipts: recipients ack delivery explicitly (`delivered` frame with message ids) and mark whole conversations read (`read` frame); senders receive `delivered`/`read` events. Read implies delivered.
 - Basic health, auth, profile, friends, messages, attachments, and WebSocket endpoints. The attachments routes use a larger request body limit (5 MiB + slack) than the 64 KiB JSON API limit.
-- Static dark-first web frontend with an auth-first flow: users only see login/signup first, then add-friend, friend requests, friend selection, stored history, realtime messaging, and per-message deletion after login.
+- Static dark-first web frontend with an auth-first flow: login/signup, add-friend, friend requests, a conversation list with unread badges and previews, presence/typing in the chat header, delivery ticks, replies, reactions, image sending, and per-message deletion.
 - Backend static file serving from configurable `FRONTEND_DIR`, defaulting to the repository `frontend/` directory for local development.
 - Security headers and request body size limits.
 
@@ -104,23 +108,19 @@ Follow these rules unless a later human instruction explicitly overrides them:
 
 Complete these tasks next:
 
-1. Replace in-memory user storage with Postgres via SQLx migrations.
-2. Add refresh tokens, device sessions, logout, secure browser session handling, and token revocation.
-3. Add Redis-backed distributed rate limits.
-4. Replace in-memory friendships and messages with Postgres contact and conversation data models (the `conversations`/`conversation_members` schema in `migrations/0001_initial.sql` maps friendships to `direct` conversations).
-5. Add unfriend/block flows and per-contact privacy controls.
-6. Add durable encrypted message storage, preserving the delete-for-me / delete-for-everyone semantics.
-7. Move image attachments from in-memory storage to encrypted object storage with malware scanning, expiring URLs, and thumbnail generation; extend to video, audio, and documents.
-8. Add message IDs generated by clients for idempotency.
-9. Add distributed fanout with NATS, Kafka, or Redpanda.
-10. Add delivery and read receipts.
-11. Add offline sync with pagination and per-device cursors.
-12. Add end-to-end encryption protocol support.
-13. Add OpenTelemetry tracing and Prometheus metrics.
-14. Add Docker Compose for local Postgres, Redis, and broker dependencies.
-15. Add CI with formatting, clippy, tests, audit, and container scan.
-16. Add production frontend build pipeline, CSP, secure cookie/session strategy, and frontend integration tests.
-17. Add load-test scenarios for 10k, 100k, and 1M-user growth phases.
+1. Add refresh tokens, device sessions, logout, secure browser session handling, and token revocation.
+2. Add Redis-backed distributed rate limits.
+3. Add unfriend/block flows and per-contact privacy controls.
+4. Encrypt stored message bodies (storage is durable in Postgres already; encryption at rest and E2EE are still pending).
+5. Move image attachment bytes from Postgres to encrypted object storage with malware scanning, expiring URLs, and thumbnail generation; extend to video, audio, and documents.
+6. Add message IDs generated by clients for idempotency.
+7. Add distributed fanout with NATS, Kafka, or Redpanda (presence and WebSocket routing are single-node today).
+8. Add offline sync pagination and per-device cursors (history currently loads whole conversations).
+9. Add end-to-end encryption protocol support.
+10. Add OpenTelemetry tracing and Prometheus metrics.
+11. Add CI with formatting, clippy, tests (including the TEST_DATABASE_URL-gated Postgres integration tests), audit, and container scan.
+12. Add production frontend build pipeline, CSP, secure cookie/session strategy, and frontend integration tests.
+13. Add load-test scenarios for 10k, 100k, and 1M-user growth phases.
 
 ## Definition of done for backend changes
 
@@ -128,7 +128,7 @@ A backend change is done only when:
 
 - `cargo fmt --check` passes.
 - `cargo clippy --all-targets --all-features -- -D warnings` passes or the limitation is documented.
-- `cargo test --all` passes.
+- `cargo test --all` passes. Postgres integration tests in `pg.rs` run only when `TEST_DATABASE_URL` is set; run them against a scratch database when storage code changes.
 - New behavior has tests or a written reason tests are deferred.
 - Security and privacy impacts are considered, including browser token handling for frontend changes.
 - This context file is updated if architecture, roadmap, or rules changed.
