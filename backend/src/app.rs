@@ -3,6 +3,7 @@ use crate::{
 };
 use axum::{
     Json, Router,
+    http::{HeaderValue, header},
     routing::{get, post},
 };
 use serde::Serialize;
@@ -67,6 +68,13 @@ pub async fn build_router(config: Config) -> anyhow::Result<Router> {
             content_type_value,
         ))
         .layer(SetResponseHeaderLayer::overriding(frame_name, frame_value))
+        // Force browsers to revalidate static frontend assets so a stale,
+        // cached app.js is never served after a deploy. `if_not_present`
+        // leaves the attachments handler's own long-lived Cache-Control intact.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-cache"),
+        ))
         .layer(CorsLayer::new().allow_origin(Any)))
 }
 
