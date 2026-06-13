@@ -9,17 +9,17 @@ Build a WhatsApp-like chat app with strong security, reliable real-time messagin
 Core user-facing capabilities:
 
 1. Account registration and login by phone number.
-2. Friend requests by phone number; only friends can message each other. There are no chat rooms — this was an explicit product decision (2026-06) replacing the earlier room feature.
-3. 1:1 real-time text messaging (group chats may return later, but contact-based, not room-based).
+2. Friend requests by phone number; only friends can start chats / be added to groups. There are no public rooms — chats are contact-based (decision 2026-06).
+3. Unified conversations: 1:1 direct chats (created on demand between friends) and group chats (title, owner, add/remove members), real-time over one WebSocket.
 4. Stored conversation history (durable in Postgres when DATABASE_URL is set).
 5. Message deletion: delete for me (per-user hide) and delete for everyone (sender-only tombstone), WhatsApp-style.
-6. Image messages (implemented as a development baseline; production needs encrypted object storage, malware scanning, and expiring URLs).
-7. Message delivery/read receipts (implemented: client-acked delivery, conversation-level read).
+6. Image and voice messages (development baseline; production needs encrypted object storage, malware scanning, expiring URLs).
+7. Read receipts via per-member read cursors (`conversation_members.last_read_at`); `read_by` set per message. Delivered-state was dropped in the conversation refactor.
 8. Typing indicators and online/offline presence with last-seen (implemented).
-9. Conversation list with unread counts and last-message previews (implemented).
-10. Replies (quoted messages) and emoji reactions (implemented with a fixed emoji set).
-11. Offline message sync (history reload works; per-device cursors still pending).
-12. Other media attachments (video, audio, documents).
+9. Conversation list (directs + groups) with unread counts and last-message previews (implemented).
+10. Replies, emoji reactions (fixed set), message pinning, and in-conversation search (implemented).
+11. Profile avatars (implemented).
+12. Offline message sync (history reload works; per-device cursors still pending).
 13. Push notifications.
 14. Contact discovery with privacy controls.
 15. End-to-end encryption for message content.
@@ -32,14 +32,14 @@ The repository currently contains a Rust backend scaffold in `backend/` plus a s
 - Axum HTTP server and Tokio async runtime.
 - JWT authentication.
 - Argon2 password hashing.
-- Storage behind per-domain traits (`UserStore`, `FriendStore`, `MessageStore`, `AttachmentStore`) with two implementations each: durable Postgres stores (`pg.rs`, selected when DATABASE_URL is set; SQLx migrations in `backend/migrations/` run automatically at startup) and in-memory development stores (the default).
-- Friend store (`friends.rs`): friend requests by phone number, accept/decline, mutual-request auto-accept, friendship checks. Friendships are stored as unordered user-id pairs. `GET /friends` returns the conversation list: each friend with presence, unread count, and last visible message, sorted by latest activity.
-- Message store (`messages.rs`): 1:1 conversations keyed by the unordered participant pair, text and image message kinds, replies (validated to the same conversation, previews embedded at read time), emoji reactions (fixed set 👍 ❤️ 😂 😮 😢 🙏, toggled, participants only, cleared on tombstone), delivery/read receipt timestamps, per-user delete-for-me hiding, and sender-only delete-for-everyone tombstones (which also purge image attachments).
-- Attachment store (`attachments.rs`): raw image upload (PNG/JPEG/GIF/WebP, max 5 MiB per image) with magic-byte content-type sniffing, uploader-only access until the image is sent, single-use binding to one message, and authenticated download for the two participants only. The in-memory store caps total bytes at 256 MiB; the Postgres store keeps bytes in the `attachments` table (object storage is a roadmap item).
-- Per-user WebSocket fanout with presence tracking (`ws.rs`): one connection per session, JSON frames tagged with `type` (`message`, `delivered`, `read`, `typing`, `reaction` inbound; plus `message_deleted`, `presence`, `error` outbound). Connection counting per user drives presence: friends receive `presence` events on first-connect/last-disconnect, and `users.last_seen_at` is persisted on disconnect. Sending requires friendship.
-- Receipts: recipients ack delivery explicitly (`delivered` frame with message ids) and mark whole conversations read (`read` frame); senders receive `delivered`/`read` events. Read implies delivered.
-- Basic health, auth, profile, friends, messages, attachments, and WebSocket endpoints. The attachments routes use a larger request body limit (5 MiB + slack) than the 64 KiB JSON API limit.
-- Static "Ripple" web frontend with an auth-first flow: login/signup, add-friend, friend requests, a conversation list with unread badges and previews, presence/typing in the chat header, delivery ticks, replies, reactions, image sending, and per-message deletion. Visual design is light-first with automatic dark mode (`prefers-color-scheme`), a brand gradient, colourful per-user avatars derived from the user id, chat bubbles, and a mobile single-pane layout with a back button (`show-chat` class toggled on `#app-screen`). The UI copy is in Vietnamese; all DOM hooks (ids/classes) the JS relies on are preserved in `index.html`.
+- Storage behind per-domain traits (`UserStore`, `FriendStore`, `ChatStore`, `AttachmentStore`) with two implementations each: durable Postgres stores (`pg.rs`, selected when DATABASE_URL is set; SQLx migrations in `backend/migrations/` run automatically at startup, `0002_conversations.sql` migrates legacy 1:1 data) and in-memory development stores (the default).
+- Friend store (`friends.rs`): friend requests by phone number, accept/decline, mutual-request auto-accept, friendship checks. Friendships are unordered user-id pairs. `GET /friends` returns the friend list with presence (used to start chats / pick group members).
+- Chat store (`chat.rs`): the unified conversation model. Conversations have members with roles (owner/admin/member) and a `last_read_at` cursor; direct conversations are keyed by the unordered pair and created on demand, groups have a title and owner. Messages carry kind (text/image/voice), body, attachment, `duration_ms` (voice), reply (validated to the same conversation, preview embedded at read time), reactions (fixed set, participants only, cleared on tombstone), `pinned`, and per-message `read_by` (members whose cursor ≥ sent_at). Supports history, conversation-scoped case-insensitive text search, pins, per-user delete-for-me, sender-only delete-for-everyone (purges media), and membership management. Authorization mirrors between both impls.
+- Attachment store (`attachments.rs`): raw image (PNG/JPEG/GIF/WebP) or audio (WebM/OGG/MP4/MPEG/WAV) upload, max 10 MiB, magic-byte content-type sniffing. Attachments are owner-private until `mark_used` (single-use); `download` is allowed for the owner, any member of the conversation referencing it (`ChatStore::attachment_visible`), or if it is a profile avatar (`UserStore::avatar_in_use`).
+- WebSocket fanout with presence (`ws.rs`): one connection per session, JSON frames tagged with `type`. Inbound: `message` (kind text/image/voice, conversation_id), `read`, `typing`, `reaction`. Outbound (fanned out to conversation members): `message`, `message_deleted`, `message_pinned`, `read` (conversation_id + user_id + at), `typing`, `presence`, `reaction`, `conversation_updated`, `error`. Connection counting drives presence to friends; `users.last_seen_at` persisted on last disconnect.
+- Receipts: members advance their cursor via the `read` frame (or implicitly when sending); senders see `read` events and compute per-message read state from `read_by` (direct → ✓✓; group → seen count).
+- Endpoints: health, auth, profile (`/me`, `/me/avatar`), friends, `/conversations*` (list, direct, group, members, messages, search, pins), `/messages/{id}` (delete) and `/messages/{id}/pin`, attachments, WebSocket. Attachment routes use a larger body limit (10 MiB + slack) than the 64 KiB JSON API limit.
+- Static "Ripple" web frontend: light-first with automatic dark mode, brand gradient, colourful avatars (with profile-photo override), chat bubbles, mobile single-pane (`show-chat` on `#app-screen`). Supports conversation list (directs + groups), a new-chat/new-group modal, group info (add member / leave), per-conversation search bar and pinned bar, voice recording via MediaRecorder, image sending, replies, reactions, pin, and deletion. UI copy is Vietnamese.
 - Backend static file serving from configurable `FRONTEND_DIR`, defaulting to the repository `frontend/` directory for local development.
 - Security headers and request body size limits.
 

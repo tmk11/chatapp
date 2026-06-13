@@ -24,31 +24,26 @@
         </div>
         <h2 class="auth-hero">Chat với những người bạn yêu thích.</h2>
         <p class="auth-hero-sub">
-          Kết bạn bằng số điện thoại, nhắn tin tức thì, gửi ảnh, thả cảm xúc — tất cả
-          trong một không gian gọn gàng và vui mắt.
+          Kết bạn, nhắn tin, tạo nhóm, gửi ảnh &amp; tin nhắn thoại — tất cả trong một
+          không gian gọn gàng và vui mắt.
         </p>
         <ul class="auth-feature-list">
-          <li><span>⚡️</span> Tin nhắn thời gian thực</li>
-          <li><span>🔒</span> Chỉ bạn bè mới nhắn được cho nhau</li>
-          <li><span>💜</span> Cảm xúc, trả lời &amp; ảnh</li>
+          <li><span>⚡️</span> Tin nhắn &amp; nhóm thời gian thực</li>
+          <li><span>🎙️</span> Tin nhắn thoại, ảnh, cảm xúc</li>
+          <li><span>📌</span> Ghim &amp; tìm kiếm tin nhắn</li>
         </ul>
       </div>
 
       <div class="auth-card">
         <div class="auth-brand mobile-only">
-          <span class="logo-blob">💬</span>
-          <span class="logo-word">Ripple</span>
+          <span class="logo-blob">💬</span><span class="logo-word">Ripple</span>
         </div>
         <h1 id="auth-title">Chào mừng trở lại 👋</h1>
         <p class="auth-sub">Đăng nhập hoặc tạo tài khoản để bắt đầu trò chuyện.</p>
 
         <div class="tabs" role="tablist" aria-label="Chế độ đăng nhập">
-          <button class="tab active" type="button" data-mode="login" role="tab" aria-selected="true">
-            Đăng nhập
-          </button>
-          <button class="tab" type="button" data-mode="register" role="tab" aria-selected="false">
-            Đăng ký
-          </button>
+          <button class="tab active" type="button" data-mode="login" role="tab" aria-selected="true">Đăng nhập</button>
+          <button class="tab" type="button" data-mode="register" role="tab" aria-selected="false">Đăng ký</button>
         </div>
 
         <form id="auth-form" class="stacked-form">
@@ -71,17 +66,19 @@
 
     <!-- ================= APP ================= -->
     <main class="app-screen hidden" id="app-screen" aria-label="Không gian trò chuyện">
-      <!-- Sidebar -->
       <aside class="sidebar">
         <header class="sidebar-head">
-          <div class="me">
+          <button class="me" id="me-button" type="button" title="Đổi ảnh đại diện">
             <span class="avatar" id="avatar">U</span>
             <div class="me-info">
               <strong id="user-name">User</strong>
               <span id="user-phone">+10000000000</span>
             </div>
-          </div>
+          </button>
           <div class="sidebar-actions">
+            <button class="icon-button" type="button" id="new-chat-button" title="Tin nhắn mới" aria-label="Tin nhắn mới">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            </button>
             <button class="icon-button" type="button" id="refresh-button" title="Làm mới" aria-label="Làm mới">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5"/></svg>
             </button>
@@ -107,32 +104,52 @@
         </div>
 
         <div class="list-scroll">
-          <div class="friend-list" id="friend-list" aria-live="polite">
-            <div class="empty-state">Chưa có bạn bè. Hãy gửi một lời mời để bắt đầu.</div>
+          <div class="conversation-list" id="conversation-list" aria-live="polite">
+            <div class="empty-state">Chưa có cuộc trò chuyện. Nhấn ✎ để bắt đầu.</div>
           </div>
         </div>
       </aside>
 
-      <!-- Chat -->
       <section class="chat" aria-labelledby="chat-title">
         <div class="chat-empty" id="chat-placeholder">
           <div class="chat-empty-art" aria-hidden="true">💬</div>
           <h2>Chọn một cuộc trò chuyện</h2>
-          <p>Tin nhắn của bạn sẽ hiện ở đây sau khi chọn một người bạn.</p>
+          <p>Tin nhắn của bạn sẽ hiện ở đây sau khi chọn một cuộc trò chuyện.</p>
         </div>
 
         <div class="chat-area hidden" id="chat-area">
           <header class="chat-head">
-            <button class="icon-button back-button" type="button" id="back-button" aria-label="Quay lại danh sách">
+            <button class="icon-button back-button" type="button" id="back-button" aria-label="Quay lại">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
             </button>
             <span class="avatar" id="chat-avatar">F</span>
             <div class="chat-head-info">
-              <strong id="chat-title">Bạn</strong>
+              <strong id="chat-title">Cuộc trò chuyện</strong>
               <span class="presence-line" id="presence-line"></span>
             </div>
+            <button class="icon-button" type="button" id="search-toggle" title="Tìm kiếm" aria-label="Tìm trong cuộc trò chuyện">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            </button>
+            <button class="icon-button hidden" type="button" id="group-info-button" title="Thành viên" aria-label="Thông tin nhóm">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </button>
             <span class="status-pill" id="socket-status">Mất kết nối</span>
           </header>
+
+          <div class="search-bar hidden" id="search-bar">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="search-icon"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input id="search-input" type="text" placeholder="Tìm tin nhắn…" autocomplete="off" />
+            <span class="search-count" id="search-count"></span>
+            <button class="icon-button small" type="button" id="search-close" aria-label="Đóng tìm kiếm">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+
+          <div class="pinned-bar hidden" id="pinned-bar">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="pin-icon"><path d="M12 17v5M9 10.76V6a3 3 0 0 1 6 0v4.76a2 2 0 0 0 .59 1.42L18 14H6l2.41-1.82A2 2 0 0 0 9 10.76Z"/></svg>
+            <span id="pinned-text" class="pinned-text"></span>
+            <span id="pinned-count" class="pinned-count"></span>
+          </div>
 
           <div class="messages" id="messages" role="log" aria-live="polite"></div>
 
@@ -153,13 +170,51 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15l-5-5L5 21"/><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2Z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>
             </button>
             <input id="message-input" type="text" maxlength="4096" placeholder="Nhắn gì đó…" autocomplete="off" disabled />
+            <button class="icon-button mic-button" type="button" id="mic-button" title="Ghi âm" aria-label="Ghi âm" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
+            </button>
             <button class="send-button" type="submit" id="send-button" aria-label="Gửi" disabled>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
             </button>
           </form>
+
+          <div class="recording-bar hidden" id="recording-bar">
+            <button class="icon-button danger" type="button" id="recording-cancel" aria-label="Huỷ ghi âm">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+            </button>
+            <span class="recording-dot" aria-hidden="true"></span>
+            <span class="recording-time" id="recording-time">0:00</span>
+            <span class="recording-hint">Đang ghi âm…</span>
+            <button class="send-button" type="button" id="recording-send" aria-label="Gửi tin nhắn thoại">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            </button>
+          </div>
         </div>
       </section>
     </main>
+
+    <!-- ================= MODAL ================= -->
+    <div class="modal-backdrop hidden" id="modal-backdrop">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-head">
+          <h2 id="modal-title">Tin nhắn mới</h2>
+          <button class="icon-button" type="button" id="modal-close" aria-label="Đóng">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="tabs modal-tabs" role="tablist">
+          <button class="tab active" type="button" data-modal-tab="direct" role="tab">Nhắn riêng</button>
+          <button class="tab" type="button" data-modal-tab="group" role="tab">Tạo nhóm</button>
+        </div>
+        <div id="group-title-row" class="field hidden">
+          <span class="field-label">Tên nhóm</span>
+          <input id="group-title" type="text" maxlength="60" placeholder="VD: Hội bạn thân" />
+        </div>
+        <p class="modal-hint" id="modal-hint">Chọn một người bạn để bắt đầu trò chuyện.</p>
+        <div class="picker-list" id="picker-list"></div>
+        <button class="primary-button hidden" type="button" id="create-group-button">Tạo nhóm</button>
+      </div>
+    </div>
 
     <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
     <script src="./app.js" type="module"></script>

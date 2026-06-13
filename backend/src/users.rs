@@ -1,7 +1,8 @@
-use crate::error::AppError;
+use crate::{auth, error::AppError, state::AppState};
 use async_trait::async_trait;
+use axum::{Json, extract::State};
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -11,6 +12,8 @@ pub struct User {
     pub id: Uuid,
     pub phone: String,
     pub display_name: String,
+    /// Attachment id of the user's profile photo, if set.
+    pub avatar_attachment_id: Option<Uuid>,
     /// Set when the user's last WebSocket connection closes. `None` for users
     /// who never connected (or, in the in-memory store, since last restart).
     pub last_seen_at: Option<DateTime<Utc>>,
@@ -34,6 +37,15 @@ pub trait UserStore: Send + Sync {
     async fn find_by_phone(&self, phone: &str) -> Option<StoredUser>;
     async fn find_by_id(&self, id: Uuid) -> Option<User>;
     async fn set_last_seen(&self, id: Uuid, at: DateTime<Utc>);
+    /// Sets the profile photo, returning the previous avatar attachment id (so
+    /// the caller can purge it) and the updated user.
+    async fn set_avatar(
+        &self,
+        id: Uuid,
+        attachment_id: Uuid,
+    ) -> Result<(Option<Uuid>, User), AppError>;
+    /// True if the attachment is currently in use as someone's avatar.
+    async fn avatar_in_use(&self, attachment_id: Uuid) -> bool;
 }
 
 #[derive(Clone, Default)]
@@ -60,6 +72,7 @@ impl UserStore for InMemoryUserStore {
             id: Uuid::new_v4(),
             phone: normalized_phone.clone(),
             display_name,
+            avatar_attachment_id: None,
             last_seen_at: None,
             created_at: Utc::now(),
         };
@@ -94,6 +107,25 @@ impl UserStore for InMemoryUserStore {
             stored.user.last_seen_at = Some(at);
         }
     }
+
+    async fn set_avatar(
+        &self,
+        id: Uuid,
+        attachment_id: Uuid,
+    ) -> Result<(Option<Uuid>, User), AppError> {
+        let mut inner = self.inner.write().await;
+        let stored = inner.get_mut(&id).ok_or(AppError::NotFound)?;
+        let previous = stored.user.avatar_attachment_id.replace(attachment_id);
+        Ok((previous, stored.user.clone()))
+    }
+
+    async fn avatar_in_use(&self, attachment_id: Uuid) -> bool {
+        self.inner
+            .read()
+            .await
+            .values()
+            .any(|stored| stored.user.avatar_attachment_id == Some(attachment_id))
+    }
 }
 
 pub fn normalize_phone(phone: &str) -> Result<String, AppError> {
@@ -109,6 +141,45 @@ pub fn normalize_phone(phone: &str) -> Result<String, AppError> {
             "phone must be E.164 format".to_owned(),
         ))
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetAvatarRequest {
+    attachment_id: Uuid,
+}
+
+/// PUT /me/avatar — authenticated; sets the caller's profile photo to a
+/// previously uploaded image attachment they own. The previous avatar's bytes
+/// are purged.
+pub async fn set_avatar(
+    State(state): State<AppState>,
+    auth::CurrentUser(user): auth::CurrentUser,
+    Json(request): Json<SetAvatarRequest>,
+) -> Result<Json<User>, AppError> {
+    // The attachment must be an image owned by the caller.
+    if !state
+        .attachments
+        .is_owner(request.attachment_id, user.id)
+        .await?
+    {
+        return Err(AppError::NotFound);
+    }
+    let (content_type, _) = state.attachments.bytes(request.attachment_id).await?;
+    if !content_type.starts_with("image/") {
+        return Err(AppError::BadRequest("avatar must be an image".to_owned()));
+    }
+    state
+        .attachments
+        .mark_used(request.attachment_id, user.id)
+        .await?;
+    let (previous, updated) = state
+        .users
+        .set_avatar(user.id, request.attachment_id)
+        .await?;
+    if let Some(previous) = previous {
+        let _ = state.attachments.remove(previous).await;
+    }
+    Ok(Json(updated))
 }
 
 #[cfg(test)]
