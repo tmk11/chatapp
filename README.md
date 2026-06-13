@@ -5,7 +5,7 @@ A WhatsApp-inspired chat application scaffold with a Rust backend designed for s
 ## What is included
 
 - Rust backend using Axum and Tokio.
-- User-friendly dark-mode web frontend served by the backend.
+- Fresh, friendly "Ripple" web frontend (light-first with automatic dark mode) served by the backend.
 - JWT-based authentication with Argon2 password hashing.
 - Durable Postgres storage (users, friendships, messages, reactions, attachments) when `DATABASE_URL` is set, with automatic migrations at startup; in-memory development stores otherwise.
 - WhatsApp-style friend requests: add a friend by phone number, accept or decline incoming requests.
@@ -48,9 +48,9 @@ already in place.
 
 ## Frontend
 
-The `frontend/` directory contains a static, responsive chat client with a dark-first design:
+The `frontend/` directory contains a static, responsive chat client ("Ripple") with a fresh, youthful design — a vibrant indigo→violet→pink brand gradient, rounded cards, colourful per-user avatars, and chat bubbles. It is light-first and automatically switches to a dark palette via `prefers-color-scheme`. On phones it collapses to a single pane with a back button between the conversation list and the open chat.
 
-- Login and registration tabs.
+- Login and registration tabs with a split-screen welcome panel.
 - Auth-first screen that hides contacts until the user is logged in.
 - Add-friend form, incoming friend-request list with accept/decline.
 - WhatsApp-style conversation list: sorted by latest activity, with online dots, message previews, timestamps, and unread badges.

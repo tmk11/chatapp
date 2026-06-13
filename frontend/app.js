@@ -5,6 +5,30 @@ const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 const TYPING_SEND_INTERVAL_MS = 2000;
 const TYPING_SHOW_MS = 3500;
 
+// Playful avatar gradients, picked deterministically per user id.
+const AVATAR_GRADIENTS = [
+  "linear-gradient(135deg, #6d5efc, #a855f7)",
+  "linear-gradient(135deg, #ff5c8a, #ff8f6b)",
+  "linear-gradient(135deg, #22c55e, #14b8a6)",
+  "linear-gradient(135deg, #38bdf8, #6366f1)",
+  "linear-gradient(135deg, #f59e0b, #ef4444)",
+  "linear-gradient(135deg, #ec4899, #8b5cf6)",
+  "linear-gradient(135deg, #06b6d4, #3b82f6)",
+  "linear-gradient(135deg, #a855f7, #ec4899)",
+];
+
+// Inline icon paths (24x24 viewBox) reused across message actions.
+const ICONS = {
+  reply: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v2"/>',
+  react:
+    '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>',
+  hide: '<path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.4 5.2A9.7 9.7 0 0 1 12 5c6 0 9 7 9 7a16 16 0 0 1-2.3 3.3M6.2 6.2A16 16 0 0 0 3 12s3 7 9 7a9 9 0 0 0 3.2-.6"/>',
+  trash:
+    '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  close: '<path d="M18 6 6 18M6 6l12 12"/>',
+};
+
 const state = {
   mode: "login",
   token: sessionStorage.getItem(SESSION_TOKEN_KEY) || "",
@@ -24,6 +48,7 @@ const messageIndex = new Map();
 const blobUrlCache = new Map();
 
 const $ = (selector) => document.querySelector(selector);
+const appScreen = $("#app-screen");
 const authForm = $("#auth-form");
 const addFriendForm = $("#add-friend-form");
 const messageForm = $("#message-form");
@@ -35,6 +60,8 @@ const imageInput = $("#image-input");
 const socketStatus = $("#socket-status");
 const presenceLine = $("#presence-line");
 const replyBanner = $("#reply-banner");
+const chatAvatar = $("#chat-avatar");
+const backButton = $("#back-button");
 
 function readStoredUser() {
   const storedUser = sessionStorage.getItem(SESSION_USER_KEY);
@@ -95,6 +122,26 @@ function sendFrame(frame) {
   return false;
 }
 
+// Deterministic colourful avatar from a user id + their initial.
+function applyAvatar(element, name, id) {
+  const key = String(id || name || "?");
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) hash = (hash + key.charCodeAt(i)) % AVATAR_GRADIENTS.length;
+  element.style.background = AVATAR_GRADIENTS[hash];
+  element.textContent = (name || "?").trim().slice(0, 1).toUpperCase() || "?";
+}
+
+function iconButton(className, title, svgPaths, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.title = title;
+  button.setAttribute("aria-label", title);
+  button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${svgPaths}</svg>`;
+  if (onClick) button.addEventListener("click", onClick);
+  return button;
+}
+
 // ---------------------------------------------------------------------------
 // Session
 // ---------------------------------------------------------------------------
@@ -118,6 +165,7 @@ function clearSession() {
   state.activeFriend = null;
   state.replyTo = null;
   messageIndex.clear();
+  appScreen.classList.remove("show-chat");
   sessionStorage.removeItem(SESSION_TOKEN_KEY);
   sessionStorage.removeItem(SESSION_USER_KEY);
   renderSession();
@@ -126,7 +174,7 @@ function clearSession() {
 function renderSession() {
   const loggedIn = Boolean(state.token && state.user);
   $("#auth-screen").classList.toggle("hidden", loggedIn);
-  $("#app-screen").classList.toggle("hidden", !loggedIn);
+  appScreen.classList.toggle("hidden", !loggedIn);
 
   if (!loggedIn) {
     renderFriends();
@@ -137,7 +185,7 @@ function renderSession() {
 
   $("#user-name").textContent = state.user.display_name;
   $("#user-phone").textContent = state.user.phone;
-  $("#avatar").textContent = state.user.display_name.slice(0, 1).toUpperCase();
+  applyAvatar($("#avatar"), state.user.display_name, state.user.id);
 }
 
 function renderMode() {
@@ -148,7 +196,8 @@ function renderMode() {
   });
   $("#display-name-row").classList.toggle("hidden", state.mode !== "register");
   $("#display-name").required = state.mode === "register";
-  $("#auth-submit").textContent = state.mode === "register" ? "Create account" : "Login";
+  $("#auth-title").textContent = state.mode === "register" ? "Tạo tài khoản ✨" : "Chào mừng trở lại 👋";
+  $("#auth-submit").textContent = state.mode === "register" ? "Tạo tài khoản" : "Đăng nhập";
 }
 
 async function authenticate(event) {
@@ -167,11 +216,26 @@ async function authenticate(event) {
       body: JSON.stringify(body),
     });
     saveSession(payload);
-    showToast(state.mode === "register" ? "Account created." : "Welcome back.");
+    showToast(state.mode === "register" ? "Đã tạo tài khoản." : "Chào mừng trở lại!");
   } catch (error) {
-    showToast(error.message, "error");
+    showToast(translateError(error.message), "error");
   } finally {
     $("#auth-submit").disabled = false;
+  }
+}
+
+function translateError(message) {
+  switch (message) {
+    case "authentication failed":
+      return "Số điện thoại hoặc mật khẩu không đúng.";
+    case "not found":
+      return "Không tìm thấy tài khoản với số điện thoại này.";
+    case "resource conflict":
+      return "Đã tồn tại.";
+    case "invalid request":
+      return "Yêu cầu không hợp lệ.";
+    default:
+      return message;
   }
 }
 
@@ -193,7 +257,7 @@ async function loadContacts() {
     renderRequests();
     renderPresenceLine();
   } catch (error) {
-    showToast(error.message, "error");
+    showToast(translateError(error.message), "error");
     if (error.message === "authentication failed") {
       clearSession();
     }
@@ -215,18 +279,18 @@ async function sendFriendRequest(event) {
     });
     phoneInput.value = "";
     if (result.status === "accepted") {
-      showToast("You are now friends.");
+      showToast("Hai bạn đã là bạn bè! 🎉");
       await loadContacts();
     } else {
-      showToast("Friend request sent.");
+      showToast("Đã gửi lời mời kết bạn.");
     }
   } catch (error) {
     const friendly =
       error.message === "not found"
-        ? "No account found with that phone number."
+        ? "Không tìm thấy tài khoản với số điện thoại này."
         : error.message === "resource conflict"
-          ? "You are already friends."
-          : error.message;
+          ? "Hai bạn đã là bạn bè rồi."
+          : translateError(error.message);
     showToast(friendly, "error");
   } finally {
     $("#add-friend-button").disabled = false;
@@ -240,10 +304,10 @@ async function respondToRequest(requestId, accept) {
       headers: authHeaders({ "content-type": "application/json" }),
       body: JSON.stringify({ accept }),
     });
-    showToast(accept ? "Friend request accepted." : "Friend request declined.");
+    showToast(accept ? "Đã chấp nhận lời mời. 🎉" : "Đã từ chối lời mời.");
     await loadContacts();
   } catch (error) {
-    showToast(error.message, "error");
+    showToast(translateError(error.message), "error");
   }
 }
 
@@ -257,7 +321,12 @@ function renderRequests() {
     const item = document.createElement("div");
     item.className = "request-item";
 
+    const avatar = document.createElement("span");
+    avatar.className = "avatar";
+    applyAvatar(avatar, request.from.display_name, request.from.id);
+
     const info = document.createElement("div");
+    info.className = "request-item-info";
     const name = document.createElement("strong");
     name.textContent = request.from.display_name;
     const phone = document.createElement("span");
@@ -266,19 +335,12 @@ function renderRequests() {
 
     const actions = document.createElement("div");
     actions.className = "request-actions";
-    const accept = document.createElement("button");
-    accept.type = "button";
-    accept.className = "secondary-button small";
-    accept.textContent = "Accept";
-    accept.addEventListener("click", () => respondToRequest(request.id, true));
-    const decline = document.createElement("button");
-    decline.type = "button";
-    decline.className = "ghost-button small";
-    decline.textContent = "Decline";
-    decline.addEventListener("click", () => respondToRequest(request.id, false));
-    actions.append(accept, decline);
+    actions.append(
+      iconButton("req-btn accept", "Chấp nhận", ICONS.check, () => respondToRequest(request.id, true)),
+      iconButton("req-btn decline", "Từ chối", ICONS.close, () => respondToRequest(request.id, false)),
+    );
 
-    item.append(info, actions);
+    item.append(avatar, info, actions);
     list.append(item);
   });
 }
@@ -289,10 +351,10 @@ function friendSummary(friendId) {
 
 function previewText(summary) {
   const last = summary.last_message;
-  if (!last) return "No messages yet.";
-  const prefix = last.sender_id === state.user.id ? "You: " : "";
-  if (last.deleted) return `${prefix}Message deleted`;
-  if (last.kind === "image") return `${prefix}📷 Photo`;
+  if (!last) return "Chưa có tin nhắn.";
+  const prefix = last.sender_id === state.user.id ? "Bạn: " : "";
+  if (last.deleted) return `${prefix}Tin nhắn đã thu hồi`;
+  if (last.kind === "image") return `${prefix}📷 Ảnh`;
   return prefix + last.body;
 }
 
@@ -301,11 +363,13 @@ function formatTime(iso) {
 }
 
 function formatLastSeen(iso) {
-  if (!iso) return "Offline";
+  if (!iso) return "Ngoại tuyến";
   const date = new Date(iso);
-  const today = new Date();
-  const sameDay = date.toDateString() === today.toDateString();
-  return `Last seen ${sameDay ? formatTime(iso) : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
+  const sameDay = date.toDateString() === new Date().toDateString();
+  const when = sameDay
+    ? formatTime(iso)
+    : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return `Hoạt động ${when}`;
 }
 
 function sortFriends() {
@@ -324,7 +388,9 @@ function renderFriends() {
   if (!state.friends.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = state.token ? "No friends yet. Send a request to begin." : "Login to view friends.";
+    empty.textContent = state.token
+      ? "Chưa có bạn bè. Hãy gửi một lời mời để bắt đầu."
+      : "Đăng nhập để xem bạn bè.";
     list.append(empty);
     return;
   }
@@ -334,39 +400,52 @@ function renderFriends() {
     const friend = summary.user;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `friend-item ${state.activeFriend?.id === friend.id ? "active" : ""}`.trim();
+    button.className = "friend-item";
+    if (state.activeFriend?.id === friend.id) button.classList.add("active");
+    if (summary.unread_count > 0) button.classList.add("unread");
     button.dataset.friendId = friend.id;
 
-    const topRow = document.createElement("div");
-    topRow.className = "friend-top";
-    const name = document.createElement("strong");
-    name.textContent = friend.display_name;
+    const avatarWrap = document.createElement("div");
+    avatarWrap.className = "friend-avatar-wrap";
+    const avatar = document.createElement("span");
+    avatar.className = "avatar";
+    applyAvatar(avatar, friend.display_name, friend.id);
     const dot = document.createElement("span");
     dot.className = `presence-dot ${summary.online ? "online" : ""}`.trim();
-    dot.title = summary.online ? "Online" : "Offline";
-    name.prepend(dot);
-    topRow.append(name);
+    dot.title = summary.online ? "Đang hoạt động" : "Ngoại tuyến";
+    avatarWrap.append(avatar, dot);
+
+    const main = document.createElement("div");
+    main.className = "friend-main";
+
+    const top = document.createElement("div");
+    top.className = "friend-top";
+    const name = document.createElement("span");
+    name.className = "friend-name";
+    name.textContent = friend.display_name;
+    top.append(name);
     if (summary.last_message) {
       const time = document.createElement("span");
       time.className = "friend-time";
       time.textContent = formatTime(summary.last_message.sent_at);
-      topRow.append(time);
+      top.append(time);
     }
 
-    const bottomRow = document.createElement("div");
-    bottomRow.className = "friend-bottom";
+    const bottom = document.createElement("div");
+    bottom.className = "friend-bottom";
     const preview = document.createElement("span");
     preview.className = "friend-preview";
     preview.textContent = previewText(summary);
-    bottomRow.append(preview);
+    bottom.append(preview);
     if (summary.unread_count > 0) {
       const badge = document.createElement("span");
       badge.className = "unread-badge";
       badge.textContent = summary.unread_count > 99 ? "99+" : String(summary.unread_count);
-      bottomRow.append(badge);
+      bottom.append(badge);
     }
 
-    button.append(topRow, bottomRow);
+    main.append(top, bottom);
+    button.append(avatarWrap, main);
     button.addEventListener("click", () => openConversation(friend));
     list.append(button);
   });
@@ -380,9 +459,10 @@ function showChatPlaceholder() {
   $("#chat-placeholder").classList.remove("hidden");
   $("#chat-area").classList.add("hidden");
   messages.replaceChildren();
-  setStatus(socketStatus, "Disconnected");
+  setStatus(socketStatus, "Mất kết nối");
   messageInput.disabled = true;
   sendButton.disabled = true;
+  attachButton.disabled = true;
 }
 
 async function openConversation(friend) {
@@ -391,9 +471,11 @@ async function openConversation(friend) {
   state.typingUntil = 0;
   renderReplyBanner();
   renderFriends();
+  appScreen.classList.add("show-chat");
   $("#chat-placeholder").classList.add("hidden");
   $("#chat-area").classList.remove("hidden");
-  $("#chat-title").textContent = `${friend.display_name} (${friend.phone})`;
+  $("#chat-title").textContent = friend.display_name;
+  applyAvatar(chatAvatar, friend.display_name, friend.id);
   messages.replaceChildren();
   messageIndex.clear();
   renderPresenceLine();
@@ -405,7 +487,7 @@ async function openConversation(friend) {
     history.forEach(appendMessage);
     markConversationRead(friend.id);
   } catch (error) {
-    showToast(error.message, "error");
+    showToast(translateError(error.message), "error");
   }
 
   updateComposerState();
@@ -432,10 +514,10 @@ function renderPresenceLine() {
     return;
   }
   if (Date.now() < state.typingUntil) {
-    presenceLine.textContent = "typing…";
+    presenceLine.textContent = "đang nhập…";
     presenceLine.className = "presence-line typing";
   } else if (summary.online) {
-    presenceLine.textContent = "Online";
+    presenceLine.textContent = "Đang hoạt động";
     presenceLine.className = "presence-line online";
   } else {
     presenceLine.textContent = formatLastSeen(summary.user.last_seen_at);
@@ -459,12 +541,12 @@ function connectSocket() {
   if (!state.token) return;
   if (state.socket && state.socket.readyState !== WebSocket.CLOSED) return;
 
-  setStatus(socketStatus, "Connecting", "connecting");
+  setStatus(socketStatus, "Đang kết nối", "connecting");
   const socket = new WebSocket(wsUrl(state.token));
   state.socket = socket;
 
   socket.addEventListener("open", () => {
-    setStatus(socketStatus, "Connected", "online");
+    setStatus(socketStatus, "Trực tuyến", "online");
     updateComposerState();
     if (state.activeFriend) markConversationRead(state.activeFriend.id);
   });
@@ -473,20 +555,20 @@ function connectSocket() {
     try {
       handleSocketEvent(JSON.parse(event.data));
     } catch {
-      showToast("Received an unreadable message.", "error");
+      showToast("Nhận được tin nhắn không đọc được.", "error");
     }
   });
 
   socket.addEventListener("close", () => {
     if (state.socket === socket) {
       state.socket = null;
-      setStatus(socketStatus, "Disconnected");
+      setStatus(socketStatus, "Mất kết nối");
       updateComposerState();
     }
   });
 
   socket.addEventListener("error", () => {
-    setStatus(socketStatus, "Error", "error");
+    setStatus(socketStatus, "Lỗi", "error");
   });
 }
 
@@ -498,13 +580,13 @@ function disconnectSocket() {
   messageInput.disabled = true;
   sendButton.disabled = true;
   attachButton.disabled = true;
-  if (socketStatus) setStatus(socketStatus, "Disconnected");
+  if (socketStatus) setStatus(socketStatus, "Mất kết nối");
 }
 
 function handleSocketEvent(event) {
   switch (event.type) {
     case "error":
-      showToast(event.error, "error");
+      showToast(translateError(event.error), "error");
       return;
     case "message":
       handleIncomingMessage(event.message);
@@ -542,15 +624,13 @@ function handleIncomingMessage(message) {
   if (state.activeFriend && peerId === state.activeFriend.id) {
     appendMessage(message);
     if (!mine) {
-      // Conversation is open: mark read right away.
       sendFrame({ type: "read", peer_id: peerId });
     }
   } else if (!mine) {
-    // Background conversation: ack delivery and bump the unread badge.
     sendFrame({ type: "delivered", message_ids: [message.id] });
     if (summary) summary.unread_count += 1;
-    const sender = summary?.user.display_name || "a friend";
-    showToast(`New message from ${sender}.`);
+    const sender = summary?.user.display_name || "một người bạn";
+    showToast(`Tin nhắn mới từ ${sender}.`);
   }
   renderFriends();
 }
@@ -640,25 +720,26 @@ async function attachmentUrl(attachmentId) {
 function renderImageBody(body, attachmentId) {
   const placeholder = document.createElement("span");
   placeholder.className = "image-loading";
-  placeholder.textContent = "Loading image…";
+  placeholder.textContent = "Đang tải ảnh…";
   body.append(placeholder);
 
   attachmentUrl(attachmentId)
     .then((url) => {
       const image = document.createElement("img");
       image.className = "message-image";
-      image.alt = "Sent image";
+      image.alt = "Ảnh đã gửi";
       image.src = url;
+      image.addEventListener("click", () => window.open(url, "_blank"));
       placeholder.replaceWith(image);
     })
     .catch(() => {
-      placeholder.textContent = "Image unavailable.";
+      placeholder.textContent = "Không tải được ảnh.";
     });
 }
 
 function senderName(senderId) {
-  if (senderId === state.user.id) return "You";
-  return state.activeFriend?.display_name || "Friend";
+  if (senderId === state.user.id) return "Bạn";
+  return state.activeFriend?.display_name || "Bạn bè";
 }
 
 function renderTicks(entry) {
@@ -668,15 +749,15 @@ function renderTicks(entry) {
   if (message.read_at) {
     ticks.textContent = "✓✓";
     ticks.className = "ticks read";
-    ticks.title = "Read";
+    ticks.title = "Đã xem";
   } else if (message.delivered_at) {
     ticks.textContent = "✓✓";
     ticks.className = "ticks";
-    ticks.title = "Delivered";
+    ticks.title = "Đã nhận";
   } else {
     ticks.textContent = "✓";
     ticks.className = "ticks";
-    ticks.title = "Sent";
+    ticks.title = "Đã gửi";
   }
 }
 
@@ -690,7 +771,7 @@ function renderReactions(entry) {
     const mine = reaction.user_ids.includes(state.user.id);
     chip.className = `reaction-chip ${mine ? "mine" : ""}`.trim();
     chip.textContent = reaction.user_ids.length > 1 ? `${reaction.emoji} ${reaction.user_ids.length}` : reaction.emoji;
-    chip.title = mine ? "Tap to remove your reaction" : "Tap to react too";
+    chip.title = mine ? "Bỏ cảm xúc của bạn" : "Thả cảm xúc";
     chip.addEventListener("click", () => {
       sendFrame({ type: "reaction", message_id: entry.message.id, emoji: reaction.emoji });
     });
@@ -702,21 +783,8 @@ function buildMessageElement(message) {
   const mine = message.sender_id === state.user.id;
   const element = document.createElement("article");
   element.className = `message ${mine ? "mine" : ""}`.trim();
+  if (message.deleted) element.classList.add("deleted");
   element.dataset.messageId = message.id;
-
-  const meta = document.createElement("div");
-  meta.className = "message-meta";
-  const sender = document.createElement("span");
-  sender.textContent = senderName(message.sender_id);
-  const time = document.createElement("time");
-  time.dateTime = message.sent_at;
-  time.textContent = formatTime(message.sent_at);
-  meta.append(sender, time);
-  if (mine && !message.deleted) {
-    const ticks = document.createElement("span");
-    ticks.className = "ticks";
-    meta.append(ticks);
-  }
 
   if (message.reply_to) {
     const quote = document.createElement("div");
@@ -725,10 +793,10 @@ function buildMessageElement(message) {
     quoteName.textContent = senderName(message.reply_to.sender_id);
     const quoteBody = document.createElement("span");
     if (message.reply_to.deleted) {
-      quoteBody.textContent = "Message deleted";
+      quoteBody.textContent = "Tin nhắn đã thu hồi";
       quote.classList.add("deleted");
     } else if (message.reply_to.kind === "image") {
-      quoteBody.textContent = "📷 Photo";
+      quoteBody.textContent = "📷 Ảnh";
     } else {
       quoteBody.textContent = message.reply_to.body;
     }
@@ -736,23 +804,36 @@ function buildMessageElement(message) {
     element.append(quote);
   }
 
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
   const body = document.createElement("div");
   body.className = "message-body";
   if (message.deleted) {
-    element.classList.add("deleted");
-    body.textContent = "This message was deleted.";
+    body.textContent = "Tin nhắn đã được thu hồi.";
   } else if (message.kind === "image" && message.attachment_id) {
     renderImageBody(body, message.attachment_id);
   } else {
     body.textContent = message.body;
   }
-
-  element.prepend(meta);
-  element.append(body);
+  bubble.append(body);
+  element.append(bubble);
 
   const chips = document.createElement("div");
   chips.className = "reaction-chips";
   element.append(chips);
+
+  const foot = document.createElement("div");
+  foot.className = "message-foot";
+  const time = document.createElement("time");
+  time.dateTime = message.sent_at;
+  time.textContent = formatTime(message.sent_at);
+  foot.append(time);
+  if (mine && !message.deleted) {
+    const ticks = document.createElement("span");
+    ticks.className = "ticks";
+    foot.append(ticks);
+  }
+  element.append(foot);
 
   if (!message.deleted) {
     element.append(buildMessageActions(message, element));
@@ -765,41 +846,25 @@ function buildMessageActions(message, element) {
   const actions = document.createElement("div");
   actions.className = "message-actions";
 
-  const reply = document.createElement("button");
-  reply.type = "button";
-  reply.className = "message-action";
-  reply.textContent = "Reply";
-  reply.addEventListener("click", () => {
-    state.replyTo = message;
-    renderReplyBanner();
-    messageInput.focus();
-  });
-  actions.append(reply);
-
-  const react = document.createElement("button");
-  react.type = "button";
-  react.className = "message-action";
-  react.textContent = "React";
-  react.addEventListener("click", (clickEvent) => {
-    clickEvent.stopPropagation();
-    toggleReactionPicker(actions, message);
-  });
-  actions.append(react);
-
-  const deleteForMe = document.createElement("button");
-  deleteForMe.type = "button";
-  deleteForMe.className = "message-action";
-  deleteForMe.textContent = "Delete for me";
-  deleteForMe.addEventListener("click", () => deleteMessage(message, element, "me"));
-  actions.append(deleteForMe);
+  actions.append(
+    iconButton("message-action", "Trả lời", ICONS.reply, () => {
+      state.replyTo = message;
+      renderReplyBanner();
+      messageInput.focus();
+    }),
+    iconButton("message-action", "Thả cảm xúc", ICONS.react, (clickEvent) => {
+      clickEvent.stopPropagation();
+      toggleReactionPicker(actions, message);
+    }),
+    iconButton("message-action", "Xoá phía tôi", ICONS.hide, () => deleteMessage(message, element, "me")),
+  );
 
   if (mine) {
-    const deleteForEveryone = document.createElement("button");
-    deleteForEveryone.type = "button";
-    deleteForEveryone.className = "message-action danger";
-    deleteForEveryone.textContent = "Delete for everyone";
-    deleteForEveryone.addEventListener("click", () => deleteMessage(message, element, "everyone"));
-    actions.append(deleteForEveryone);
+    actions.append(
+      iconButton("message-action danger", "Thu hồi với mọi người", ICONS.trash, () =>
+        deleteMessage(message, element, "everyone"),
+      ),
+    );
   }
   return actions;
 }
@@ -847,8 +912,8 @@ function appendMessage(message) {
 async function deleteMessage(message, element, scope) {
   const confirmText =
     scope === "everyone"
-      ? "Delete this message for everyone? This cannot be undone."
-      : "Delete this message for you only?";
+      ? "Thu hồi tin nhắn này với mọi người? Không thể hoàn tác."
+      : "Xoá tin nhắn này chỉ ở phía bạn?";
   if (!window.confirm(confirmText)) return;
 
   try {
@@ -862,7 +927,7 @@ async function deleteMessage(message, element, scope) {
     }
     // scope=everyone is reflected via the message_deleted WebSocket event.
   } catch (error) {
-    showToast(error.message, "error");
+    showToast(translateError(error.message), "error");
   }
 }
 
@@ -876,9 +941,8 @@ function renderReplyBanner() {
     return;
   }
   replyBanner.classList.remove("hidden");
-  $("#reply-banner-name").textContent = `Replying to ${senderName(state.replyTo.sender_id)}`;
-  $("#reply-banner-body").textContent =
-    state.replyTo.kind === "image" ? "📷 Photo" : state.replyTo.body;
+  $("#reply-banner-name").textContent = `Trả lời ${senderName(state.replyTo.sender_id)}`;
+  $("#reply-banner-body").textContent = state.replyTo.kind === "image" ? "📷 Ảnh" : state.replyTo.body;
 }
 
 function sendMessage(event) {
@@ -897,7 +961,7 @@ function sendMessage(event) {
 async function sendImage(file) {
   if (!file || !state.activeFriend) return;
   if (file.size > MAX_IMAGE_BYTES) {
-    showToast("Images must be 5 MB or smaller.", "error");
+    showToast("Ảnh phải nhỏ hơn 5 MB.", "error");
     return;
   }
 
@@ -916,8 +980,8 @@ async function sendImage(file) {
   } catch (error) {
     const friendly =
       error.message === "invalid request"
-        ? "Only PNG, JPEG, GIF, or WebP images are supported."
-        : error.message;
+        ? "Chỉ hỗ trợ ảnh PNG, JPEG, GIF hoặc WebP."
+        : translateError(error.message);
     showToast(friendly, "error");
   } finally {
     attachButton.disabled = false;
@@ -954,6 +1018,9 @@ imageInput.addEventListener("change", () => {
   const [file] = imageInput.files;
   imageInput.value = "";
   sendImage(file);
+});
+backButton.addEventListener("click", () => {
+  appScreen.classList.remove("show-chat");
 });
 $("#cancel-reply").addEventListener("click", () => {
   state.replyTo = null;

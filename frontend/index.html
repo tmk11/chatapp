@@ -1,121 +1,162 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark light" />
-    <title>Secure Chat</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#6d5efc" />
+    <title>Ripple · Chat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <section class="auth-screen" id="auth-screen" aria-labelledby="auth-title">
-        <div class="card auth-card">
-          <p class="eyebrow">Secure Chat</p>
-          <h1 id="auth-title">Login or sign up</h1>
-          <p class="muted">Create an account, add friends by phone number, and start chatting.</p>
-
-          <div class="tabs" role="tablist" aria-label="Authentication mode">
-            <button class="tab active" type="button" data-mode="login" role="tab" aria-selected="true">Login</button>
-            <button class="tab" type="button" data-mode="register" role="tab" aria-selected="false">Sign up</button>
-          </div>
-
-          <form id="auth-form" class="stacked-form">
-            <label>
-              Phone number
-              <input id="phone" name="phone" type="tel" placeholder="+15550001111" autocomplete="tel" required />
-            </label>
-            <label id="display-name-row" class="hidden">
-              Display name
-              <input id="display-name" name="displayName" type="text" placeholder="Alice" autocomplete="name" />
-            </label>
-            <label>
-              Password
-              <input id="password" name="password" type="password" minlength="12" placeholder="At least 12 characters" autocomplete="current-password" required />
-            </label>
-            <button class="primary-button" type="submit" id="auth-submit">Login</button>
-          </form>
+    <!-- ================= AUTH ================= -->
+    <section class="auth-screen" id="auth-screen" aria-labelledby="auth-title">
+      <div class="auth-aside">
+        <div class="auth-brand">
+          <span class="logo-blob">💬</span>
+          <span class="logo-word">Ripple</span>
         </div>
-      </section>
+        <h2 class="auth-hero">Chat với những người bạn yêu thích.</h2>
+        <p class="auth-hero-sub">
+          Kết bạn bằng số điện thoại, nhắn tin tức thì, gửi ảnh, thả cảm xúc — tất cả
+          trong một không gian gọn gàng và vui mắt.
+        </p>
+        <ul class="auth-feature-list">
+          <li><span>⚡️</span> Tin nhắn thời gian thực</li>
+          <li><span>🔒</span> Chỉ bạn bè mới nhắn được cho nhau</li>
+          <li><span>💜</span> Cảm xúc, trả lời &amp; ảnh</li>
+        </ul>
+      </div>
 
-      <section class="app-screen hidden" id="app-screen" aria-label="Chat workspace">
-        <header class="topbar card">
-          <div>
-            <p class="eyebrow">Chats</p>
-            <h1>Messages</h1>
-          </div>
-          <div class="user-actions">
-            <div class="user-chip">
-              <span class="avatar" id="avatar">U</span>
-              <div>
-                <strong id="user-name">User</strong>
-                <span id="user-phone">+10000000000</span>
-              </div>
+      <div class="auth-card">
+        <div class="auth-brand mobile-only">
+          <span class="logo-blob">💬</span>
+          <span class="logo-word">Ripple</span>
+        </div>
+        <h1 id="auth-title">Chào mừng trở lại 👋</h1>
+        <p class="auth-sub">Đăng nhập hoặc tạo tài khoản để bắt đầu trò chuyện.</p>
+
+        <div class="tabs" role="tablist" aria-label="Chế độ đăng nhập">
+          <button class="tab active" type="button" data-mode="login" role="tab" aria-selected="true">
+            Đăng nhập
+          </button>
+          <button class="tab" type="button" data-mode="register" role="tab" aria-selected="false">
+            Đăng ký
+          </button>
+        </div>
+
+        <form id="auth-form" class="stacked-form">
+          <label class="field">
+            <span class="field-label">Số điện thoại</span>
+            <input id="phone" name="phone" type="tel" placeholder="+84901234567" autocomplete="tel" required />
+          </label>
+          <label class="field hidden" id="display-name-row">
+            <span class="field-label">Tên hiển thị</span>
+            <input id="display-name" name="displayName" type="text" placeholder="Linh" autocomplete="name" />
+          </label>
+          <label class="field">
+            <span class="field-label">Mật khẩu</span>
+            <input id="password" name="password" type="password" minlength="12" placeholder="Tối thiểu 12 ký tự" autocomplete="current-password" required />
+          </label>
+          <button class="primary-button" type="submit" id="auth-submit">Đăng nhập</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ================= APP ================= -->
+    <main class="app-screen hidden" id="app-screen" aria-label="Không gian trò chuyện">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <header class="sidebar-head">
+          <div class="me">
+            <span class="avatar" id="avatar">U</span>
+            <div class="me-info">
+              <strong id="user-name">User</strong>
+              <span id="user-phone">+10000000000</span>
             </div>
-            <button class="ghost-button" type="button" id="logout-button">Logout</button>
+          </div>
+          <div class="sidebar-actions">
+            <button class="icon-button" type="button" id="refresh-button" title="Làm mới" aria-label="Làm mới">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5"/></svg>
+            </button>
+            <button class="icon-button" type="button" id="logout-button" title="Đăng xuất" aria-label="Đăng xuất">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+            </button>
           </div>
         </header>
 
-        <div class="workspace">
-          <aside class="card friends-panel">
-            <div class="section-header">
-              <h2>Friends</h2>
-              <button class="ghost-button small" type="button" id="refresh-button">Refresh</button>
+        <form id="add-friend-form" class="add-friend">
+          <div class="search-field">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="search-icon"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input id="friend-phone" type="tel" maxlength="16" placeholder="Thêm bạn qua số điện thoại" required />
+          </div>
+          <button class="add-button" type="submit" id="add-friend-button" title="Gửi lời mời" aria-label="Gửi lời mời kết bạn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </form>
+
+        <div class="requests hidden" id="requests-section">
+          <p class="requests-title">Lời mời kết bạn</p>
+          <div class="request-list" id="request-list" aria-live="polite"></div>
+        </div>
+
+        <div class="list-scroll">
+          <div class="friend-list" id="friend-list" aria-live="polite">
+            <div class="empty-state">Chưa có bạn bè. Hãy gửi một lời mời để bắt đầu.</div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Chat -->
+      <section class="chat" aria-labelledby="chat-title">
+        <div class="chat-empty" id="chat-placeholder">
+          <div class="chat-empty-art" aria-hidden="true">💬</div>
+          <h2>Chọn một cuộc trò chuyện</h2>
+          <p>Tin nhắn của bạn sẽ hiện ở đây sau khi chọn một người bạn.</p>
+        </div>
+
+        <div class="chat-area hidden" id="chat-area">
+          <header class="chat-head">
+            <button class="icon-button back-button" type="button" id="back-button" aria-label="Quay lại danh sách">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            </button>
+            <span class="avatar" id="chat-avatar">F</span>
+            <div class="chat-head-info">
+              <strong id="chat-title">Bạn</strong>
+              <span class="presence-line" id="presence-line"></span>
             </div>
+            <span class="status-pill" id="socket-status">Mất kết nối</span>
+          </header>
 
-            <form id="add-friend-form" class="add-friend-form">
-              <label>
-                Add a friend by phone
-                <input id="friend-phone" type="tel" maxlength="16" placeholder="+15550002222" required />
-              </label>
-              <button class="secondary-button" type="submit" id="add-friend-button">Send friend request</button>
-            </form>
+          <div class="messages" id="messages" role="log" aria-live="polite"></div>
 
-            <div class="requests-section hidden" id="requests-section">
-              <h3>Friend requests</h3>
-              <div class="request-list" id="request-list" aria-live="polite"></div>
+          <div class="reply-banner hidden" id="reply-banner">
+            <div class="reply-banner-bar" aria-hidden="true"></div>
+            <div class="reply-banner-text">
+              <strong id="reply-banner-name">Đang trả lời</strong>
+              <span id="reply-banner-body"></span>
             </div>
+            <button class="icon-button small" type="button" id="cancel-reply" aria-label="Huỷ trả lời">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
 
-            <div class="friend-list" id="friend-list" aria-live="polite">
-              <div class="empty-state">No friends yet. Send a request to begin.</div>
-            </div>
-          </aside>
-
-          <section class="card chat-panel" aria-labelledby="chat-title">
-            <div class="chat-placeholder" id="chat-placeholder">
-              <div class="empty-icon" aria-hidden="true">💬</div>
-              <h2>Select a friend</h2>
-              <p class="muted">Your conversation history appears after you pick a friend.</p>
-            </div>
-
-            <div class="chat-area hidden" id="chat-area">
-              <div class="section-header chat-header">
-                <div>
-                  <p class="eyebrow">Chatting with</p>
-                  <h2 id="chat-title">Friend</h2>
-                  <p class="presence-line" id="presence-line"></p>
-                </div>
-                <span class="status-pill" id="socket-status">Disconnected</span>
-              </div>
-
-              <div class="messages" id="messages" role="log" aria-live="polite"></div>
-
-              <div class="reply-banner hidden" id="reply-banner">
-                <div class="reply-banner-text">
-                  <strong id="reply-banner-name">Replying</strong>
-                  <span id="reply-banner-body"></span>
-                </div>
-                <button class="ghost-button small" type="button" id="cancel-reply" aria-label="Cancel reply">✕</button>
-              </div>
-
-              <form id="message-form" class="message-form">
-                <input id="image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" class="hidden" />
-                <button class="ghost-button attach-button" type="button" id="attach-button" title="Send an image" aria-label="Send an image" disabled>📷</button>
-                <input id="message-input" type="text" maxlength="4096" placeholder="Write a message..." autocomplete="off" disabled />
-                <button class="primary-button" type="submit" id="send-button" disabled>Send</button>
-              </form>
-            </div>
-          </section>
+          <form id="message-form" class="composer">
+            <input id="image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" class="hidden" />
+            <button class="icon-button attach-button" type="button" id="attach-button" title="Gửi ảnh" aria-label="Gửi ảnh" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15l-5-5L5 21"/><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2Z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>
+            </button>
+            <input id="message-input" type="text" maxlength="4096" placeholder="Nhắn gì đó…" autocomplete="off" disabled />
+            <button class="send-button" type="submit" id="send-button" aria-label="Gửi" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            </button>
+          </form>
         </div>
       </section>
     </main>
