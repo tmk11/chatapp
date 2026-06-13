@@ -1,4 +1,6 @@
-use crate::{attachments, auth, config::Config, friends, messages, security, state::AppState, ws};
+use crate::{
+    attachments, auth, chat, config::Config, friends, security, state::AppState, users, ws,
+};
 use axum::{
     Json, Router,
     routing::{get, post},
@@ -28,11 +30,21 @@ pub async fn build_router(config: Config) -> anyhow::Result<Router> {
             get(friends::list_requests).post(friends::send_request),
         )
         .route("/friends/requests/{id}", post(friends::respond))
+        .route("/conversations", get(chat::list_conversations))
+        .route("/conversations/direct", post(chat::open_direct))
+        .route("/conversations/group", post(chat::create_group))
+        .route("/conversations/{id}/messages", get(chat::history))
+        .route("/conversations/{id}/search", get(chat::search))
+        .route("/conversations/{id}/pins", get(chat::pinned))
+        .route("/conversations/{id}/members", post(chat::add_member))
         .route(
-            "/messages/{id}",
-            get(messages::history).delete(messages::delete),
+            "/conversations/{id}/members/{user_id}",
+            axum::routing::delete(chat::remove_member),
         )
+        .route("/messages/{id}", axum::routing::delete(chat::delete))
+        .route("/messages/{id}/pin", post(chat::set_pin))
         .route("/me", get(me))
+        .route("/me/avatar", axum::routing::put(users::set_avatar))
         .route("/ws", get(ws::handler))
         .layer(RequestBodyLimitLayer::new(security::MAX_REQUEST_BODY_BYTES));
 

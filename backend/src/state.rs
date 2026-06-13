@@ -1,10 +1,10 @@
 use crate::{
     attachments::{AttachmentStore, InMemoryAttachmentStore},
     auth::AuthService,
+    chat::{ChatStore, InMemoryChatStore},
     config::Config,
     friends::{FriendStore, InMemoryFriendStore},
-    messages::{InMemoryMessageStore, MessageStore},
-    pg::{PgAttachmentStore, PgFriendStore, PgMessageStore, PgUserStore},
+    pg::{PgAttachmentStore, PgChatStore, PgFriendStore, PgUserStore},
     users::{InMemoryUserStore, UserStore},
     ws::UserHub,
 };
@@ -15,7 +15,7 @@ use tracing::info;
 type Stores = (
     Arc<dyn UserStore>,
     Arc<dyn FriendStore>,
-    Arc<dyn MessageStore>,
+    Arc<dyn ChatStore>,
     Arc<dyn AttachmentStore>,
 );
 
@@ -24,7 +24,7 @@ pub struct AppState {
     pub auth: Arc<AuthService>,
     pub users: Arc<dyn UserStore>,
     pub friends: Arc<dyn FriendStore>,
-    pub messages: Arc<dyn MessageStore>,
+    pub chat: Arc<dyn ChatStore>,
     pub attachments: Arc<dyn AttachmentStore>,
     pub user_hub: UserHub,
 }
@@ -34,7 +34,7 @@ impl AppState {
     /// Postgres and runs pending migrations; otherwise it falls back to the
     /// development in-memory stores.
     pub async fn new(config: Config) -> anyhow::Result<Self> {
-        let (users, friends, messages, attachments): Stores = match &config.database_url {
+        let (users, friends, chat, attachments): Stores = match &config.database_url {
             Some(database_url) => {
                 let pool = sqlx::postgres::PgPoolOptions::new()
                     .max_connections(16)
@@ -49,7 +49,7 @@ impl AppState {
                 (
                     Arc::new(PgUserStore::new(pool.clone())),
                     Arc::new(PgFriendStore::new(pool.clone())),
-                    Arc::new(PgMessageStore::new(pool.clone())),
+                    Arc::new(PgChatStore::new(pool.clone())),
                     Arc::new(PgAttachmentStore::new(pool)),
                 )
             }
@@ -58,7 +58,7 @@ impl AppState {
                 (
                     Arc::new(InMemoryUserStore::default()),
                     Arc::new(InMemoryFriendStore::default()),
-                    Arc::new(InMemoryMessageStore::default()),
+                    Arc::new(InMemoryChatStore::default()),
                     Arc::new(InMemoryAttachmentStore::default()),
                 )
             }
@@ -68,7 +68,7 @@ impl AppState {
             auth,
             users,
             friends,
-            messages,
+            chat,
             attachments,
             user_hub: UserHub::default(),
         })

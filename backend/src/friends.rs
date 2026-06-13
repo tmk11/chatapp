@@ -1,7 +1,6 @@
 use crate::{
     auth,
     error::AppError,
-    messages::MessageView,
     state::AppState,
     users::{User, normalize_phone},
 };
@@ -194,14 +193,12 @@ pub struct RespondResponse {
     status: &'static str,
 }
 
-/// One sidebar entry: the friend plus everything needed to render the
-/// WhatsApp-style conversation list.
+/// A friend entry for the "new chat" / "add to group" pickers.
 #[derive(Debug, Serialize)]
-pub struct FriendSummary {
+pub struct FriendView {
+    #[serde(flatten)]
     pub user: User,
     pub online: bool,
-    pub unread_count: usize,
-    pub last_message: Option<MessageView>,
 }
 
 /// POST /friends/requests — authenticated; sends a friend request to the user
@@ -263,34 +260,25 @@ pub async fn respond(
     }))
 }
 
-/// GET /friends — authenticated; returns the conversation list: each friend
-/// with presence, unread count, and the latest visible message, sorted by
-/// most recent activity (friends without messages last, alphabetically).
+/// GET /friends — authenticated; the user's friends with presence, sorted by
+/// name. Used to start new direct chats and to pick group members; the chat
+/// list itself lives at `/conversations`.
 pub async fn list_friends(
     State(state): State<AppState>,
     auth::CurrentUser(user): auth::CurrentUser,
-) -> Result<Json<Vec<FriendSummary>>, AppError> {
+) -> Result<Json<Vec<FriendView>>, AppError> {
     let friend_ids = state.friends.friends_of(user.id).await?;
-    let mut summaries = Vec::with_capacity(friend_ids.len());
+    let mut friends = Vec::with_capacity(friend_ids.len());
     for friend_id in friend_ids {
-        let Some(friend) = state.users.find_by_id(friend_id).await else {
-            continue;
-        };
-        let summary = state.messages.summary(user.id, friend_id).await?;
-        summaries.push(FriendSummary {
-            online: state.user_hub.is_online(friend.id).await,
-            user: friend,
-            unread_count: summary.unread_count,
-            last_message: summary.last_message,
-        });
+        if let Some(friend) = state.users.find_by_id(friend_id).await {
+            friends.push(FriendView {
+                online: state.user_hub.is_online(friend.id).await,
+                user: friend,
+            });
+        }
     }
-    summaries.sort_by(|a, b| {
-        let a_at = a.last_message.as_ref().map(|message| message.sent_at);
-        let b_at = b.last_message.as_ref().map(|message| message.sent_at);
-        b_at.cmp(&a_at)
-            .then_with(|| a.user.display_name.cmp(&b.user.display_name))
-    });
-    Ok(Json(summaries))
+    friends.sort_by(|a, b| a.user.display_name.cmp(&b.user.display_name));
+    Ok(Json(friends))
 }
 
 #[cfg(test)]

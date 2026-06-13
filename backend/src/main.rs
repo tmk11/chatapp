@@ -1,10 +1,10 @@
 mod app;
 mod attachments;
 mod auth;
+mod chat;
 mod config;
 mod error;
 mod friends;
-mod messages;
 mod pg;
 mod security;
 mod state;

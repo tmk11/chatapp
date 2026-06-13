@@ -1,4 +1,8 @@
-use crate::{error::AppError, messages::MessageView, state::AppState};
+use crate::{
+    chat::{MessageKind, MessageView, NewMessage},
+    error::AppError,
+    state::AppState,
+};
 use axum::{
     extract::{
         Query, State, WebSocketUpgrade,
@@ -30,8 +34,6 @@ pub struct UserHub {
 }
 
 impl UserHub {
-    /// Registers one connection. Returns the user's broadcast sender and
-    /// whether this was the user's first concurrent connection.
     async fn connect(&self, user_id: Uuid) -> (broadcast::Sender<OutboundEvent>, bool) {
         let mut users = self.users.write().await;
         let entry = users.entry(user_id).or_default();
@@ -44,7 +46,6 @@ impl UserHub {
         (sender, first)
     }
 
-    /// Unregisters one connection. Returns true when it was the user's last.
     async fn disconnect(&self, user_id: Uuid) -> bool {
         let mut users = self.users.write().await;
         let Some(entry) = users.get_mut(&user_id) else {
@@ -87,21 +88,22 @@ pub enum OutboundEvent {
         message: MessageView,
     },
     MessageDeleted {
+        conversation_id: Uuid,
         message_id: Uuid,
-        sender_id: Uuid,
-        recipient_id: Uuid,
     },
-    /// Sent to the original sender when the recipient acks delivery.
-    Delivered {
-        message_ids: Vec<Uuid>,
-        by: Uuid,
+    MessagePinned {
+        conversation_id: Uuid,
+        message_id: Uuid,
+        pinned: bool,
     },
-    /// Sent to the original sender when the recipient reads the conversation.
+    /// A member advanced their read cursor in a conversation.
     Read {
-        message_ids: Vec<Uuid>,
-        by: Uuid,
+        conversation_id: Uuid,
+        user_id: Uuid,
+        at: DateTime<Utc>,
     },
     Typing {
+        conversation_id: Uuid,
         from: Uuid,
     },
     Presence {
@@ -110,10 +112,15 @@ pub enum OutboundEvent {
         last_seen_at: Option<DateTime<Utc>>,
     },
     Reaction {
+        conversation_id: Uuid,
         message_id: Uuid,
         user_id: Uuid,
         emoji: String,
         added: bool,
+    },
+    /// Membership or metadata changed; clients should refetch the list.
+    ConversationUpdated {
+        conversation_id: Uuid,
     },
     Error {
         error: String,
@@ -123,38 +130,52 @@ pub enum OutboundEvent {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum IncomingFrame {
-    /// Text (`body`) or image (`attachment_id`) message — exactly one of the
-    /// two — optionally replying to an earlier message in the conversation.
+    /// Sends a message to a conversation the user belongs to. `kind` defaults
+    /// to text; image/voice carry an `attachment_id` (voice also `duration_ms`).
     Message {
-        to: Uuid,
+        conversation_id: Uuid,
+        #[serde(default)]
+        kind: IncomingKind,
         body: Option<String>,
         attachment_id: Option<Uuid>,
+        duration_ms: Option<i32>,
         reply_to: Option<Uuid>,
     },
-    /// Recipient acks that it received these messages (e.g. via this socket).
-    Delivered {
-        message_ids: Vec<Uuid>,
-    },
-    /// Recipient opened the conversation with `peer_id`: everything unread
-    /// from that peer becomes read.
+    /// The user opened/read a conversation up to now.
     Read {
-        peer_id: Uuid,
+        conversation_id: Uuid,
     },
     Typing {
-        to: Uuid,
+        conversation_id: Uuid,
     },
-    /// Toggles an emoji reaction on a message in one of the user's
-    /// conversations.
     Reaction {
         message_id: Uuid,
         emoji: String,
     },
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum IncomingKind {
+    #[default]
+    Text,
+    Image,
+    Voice,
+}
+
+impl IncomingKind {
+    fn to_kind(&self) -> MessageKind {
+        match self {
+            IncomingKind::Text => MessageKind::Text,
+            IncomingKind::Image => MessageKind::Image,
+            IncomingKind::Voice => MessageKind::Voice,
+        }
+    }
+}
+
 /// GET /ws?token=<JWT> — one connection per user session. All frames are
-/// JSON-tagged with `type` (message, delivered, read, typing, reaction); see
-/// `IncomingFrame` and `OutboundEvent`. Sending messages, typing signals, and
-/// reactions is only allowed between friends.
+/// JSON-tagged with `type` (message, read, typing, reaction). Membership is
+/// enforced per conversation.
 pub async fn handler(
     State(state): State<AppState>,
     Query(query): Query<WsQuery>,
@@ -237,6 +258,21 @@ async fn broadcast_presence(
     }
 }
 
+async fn fan_out(state: &AppState, conversation_id: Uuid, event: OutboundEvent) {
+    let Ok(member_ids) = state.chat.members(conversation_id).await else {
+        return;
+    };
+    for member_id in member_ids {
+        state.user_hub.send_to(member_id, event.clone()).await;
+    }
+}
+
+fn error_event(message: &str) -> Option<OutboundEvent> {
+    Some(OutboundEvent::Error {
+        error: message.to_owned(),
+    })
+}
+
 /// Validates, persists, and fans out one incoming frame. Returns an error
 /// event to echo back to the sender's socket when the frame is rejected.
 async fn handle_incoming(state: &AppState, user_id: Uuid, text: &str) -> Option<OutboundEvent> {
@@ -250,126 +286,133 @@ async fn handle_incoming(state: &AppState, user_id: Uuid, text: &str) -> Option<
 
     match frame {
         IncomingFrame::Message {
-            to,
+            conversation_id,
+            kind,
             body,
             attachment_id,
+            duration_ms,
             reply_to,
-        } => handle_message(state, user_id, to, body, attachment_id, reply_to).await,
-        IncomingFrame::Delivered { message_ids } => {
-            handle_delivered(state, user_id, &message_ids).await
+        } => {
+            handle_message(
+                state,
+                user_id,
+                conversation_id,
+                kind.to_kind(),
+                body,
+                attachment_id,
+                duration_ms,
+                reply_to,
+            )
+            .await
         }
-        IncomingFrame::Read { peer_id } => handle_read(state, user_id, peer_id).await,
-        IncomingFrame::Typing { to } => handle_typing(state, user_id, to).await,
+        IncomingFrame::Read { conversation_id } => {
+            handle_read(state, user_id, conversation_id).await
+        }
+        IncomingFrame::Typing { conversation_id } => {
+            handle_typing(state, user_id, conversation_id).await
+        }
         IncomingFrame::Reaction { message_id, emoji } => {
             handle_reaction(state, user_id, message_id, &emoji).await
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_message(
     state: &AppState,
     user_id: Uuid,
-    to: Uuid,
+    conversation_id: Uuid,
+    kind: MessageKind,
     body: Option<String>,
     attachment_id: Option<Uuid>,
+    duration_ms: Option<i32>,
     reply_to: Option<Uuid>,
 ) -> Option<OutboundEvent> {
-    match state.friends.are_friends(user_id, to).await {
+    match state.chat.is_member(conversation_id, user_id).await {
         Ok(true) => {}
-        Ok(false) => return error_event("recipient is not your friend"),
+        Ok(false) => return error_event("you are not in this conversation"),
         Err(_) => return error_event("internal error"),
     }
-    let stored = match (body, attachment_id) {
-        (Some(body), None) => {
-            state
-                .messages
-                .append_text(user_id, to, body, reply_to)
-                .await
+
+    // Media must be a fresh attachment owned by the sender; mark it used.
+    if matches!(kind, MessageKind::Image | MessageKind::Voice) {
+        let Some(attachment_id) = attachment_id else {
+            return error_event("attachment_id required");
+        };
+        if state
+            .attachments
+            .mark_used(attachment_id, user_id)
+            .await
+            .is_err()
+        {
+            return error_event("unknown or already used attachment");
         }
-        (None, Some(attachment_id)) => {
-            match state.attachments.attach(attachment_id, user_id, to).await {
-                Ok(()) => {
-                    state
-                        .messages
-                        .append_image(user_id, to, attachment_id, reply_to)
-                        .await
-                }
-                Err(_) => return error_event("unknown or already used attachment"),
-            }
-        }
-        _ => return error_event("message must contain either a body or an attachment_id"),
+    }
+
+    let draft = NewMessage {
+        kind,
+        body: body.unwrap_or_default(),
+        attachment_id: if matches!(kind, MessageKind::Image | MessageKind::Voice) {
+            attachment_id
+        } else {
+            None
+        },
+        duration_ms,
+        reply_to,
     };
-    let message = match stored {
+
+    let message = match state.chat.append(conversation_id, user_id, draft).await {
         Ok(message) => message,
         Err(AppError::BadRequest(reason)) => return error_event(&reason),
-        Err(_) => return error_event("invalid message"),
+        Err(_) => return error_event("could not send message"),
     };
-    let recipient_id = message.recipient_id;
-    let event = OutboundEvent::Message { message };
-    state.user_hub.send_to(user_id, event.clone()).await;
-    state.user_hub.send_to(recipient_id, event).await;
+    fan_out(state, conversation_id, OutboundEvent::Message { message }).await;
     None
 }
 
-async fn handle_delivered(
+async fn handle_read(
     state: &AppState,
     user_id: Uuid,
-    message_ids: &[Uuid],
+    conversation_id: Uuid,
 ) -> Option<OutboundEvent> {
-    let updated = match state.messages.mark_delivered(message_ids, user_id).await {
-        Ok(updated) => updated,
-        Err(_) => return error_event("internal error"),
-    };
-    // Group acked ids by original sender so each sender gets one event.
-    let mut by_sender: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
-    for (message_id, sender_id) in updated {
-        by_sender.entry(sender_id).or_default().push(message_id);
-    }
-    for (sender_id, message_ids) in by_sender {
-        state
-            .user_hub
-            .send_to(
-                sender_id,
-                OutboundEvent::Delivered {
-                    message_ids,
-                    by: user_id,
-                },
-            )
-            .await;
-    }
-    None
-}
-
-async fn handle_read(state: &AppState, user_id: Uuid, peer_id: Uuid) -> Option<OutboundEvent> {
-    let message_ids = match state.messages.mark_read(user_id, peer_id).await {
-        Ok(message_ids) => message_ids,
-        Err(_) => return error_event("internal error"),
-    };
-    if !message_ids.is_empty() {
-        state
-            .user_hub
-            .send_to(
-                peer_id,
+    match state.chat.mark_read(conversation_id, user_id).await {
+        Ok(at) => {
+            fan_out(
+                state,
+                conversation_id,
                 OutboundEvent::Read {
-                    message_ids,
-                    by: user_id,
+                    conversation_id,
+                    user_id,
+                    at,
                 },
             )
             .await;
-    }
-    None
-}
-
-async fn handle_typing(state: &AppState, user_id: Uuid, to: Uuid) -> Option<OutboundEvent> {
-    match state.friends.are_friends(user_id, to).await {
-        Ok(true) => {
-            state
-                .user_hub
-                .send_to(to, OutboundEvent::Typing { from: user_id })
-                .await;
             None
         }
-        Ok(false) => error_event("recipient is not your friend"),
+        Err(AppError::Forbidden) => error_event("you are not in this conversation"),
+        Err(_) => error_event("internal error"),
+    }
+}
+
+async fn handle_typing(
+    state: &AppState,
+    user_id: Uuid,
+    conversation_id: Uuid,
+) -> Option<OutboundEvent> {
+    match state.chat.members(conversation_id).await {
+        Ok(member_ids) if member_ids.contains(&user_id) => {
+            let event = OutboundEvent::Typing {
+                conversation_id,
+                from: user_id,
+            };
+            for member_id in member_ids {
+                if member_id != user_id {
+                    state.user_hub.send_to(member_id, event.clone()).await;
+                }
+            }
+            None
+        }
+        Ok(_) => error_event("you are not in this conversation"),
         Err(_) => error_event("internal error"),
     }
 }
@@ -380,33 +423,25 @@ async fn handle_reaction(
     message_id: Uuid,
     emoji: &str,
 ) -> Option<OutboundEvent> {
-    let toggle = match state
-        .messages
-        .toggle_reaction(message_id, user_id, emoji)
-        .await
-    {
-        Ok(toggle) => toggle,
+    let result = match state.chat.toggle_reaction(message_id, user_id, emoji).await {
+        Ok(result) => result,
         Err(AppError::BadRequest(reason)) => return error_event(&reason),
         Err(_) => return error_event("unknown message"),
     };
-    let event = OutboundEvent::Reaction {
-        message_id,
-        user_id,
-        emoji: emoji.to_owned(),
-        added: toggle.added,
-    };
-    state
-        .user_hub
-        .send_to(toggle.sender_id, event.clone())
-        .await;
-    state.user_hub.send_to(toggle.recipient_id, event).await;
+    let conversation_id = result.view.conversation_id;
+    fan_out(
+        state,
+        conversation_id,
+        OutboundEvent::Reaction {
+            conversation_id,
+            message_id,
+            user_id,
+            emoji: result.emoji,
+            added: result.added,
+        },
+    )
+    .await;
     None
-}
-
-fn error_event(message: &str) -> Option<OutboundEvent> {
-    Some(OutboundEvent::Error {
-        error: message.to_owned(),
-    })
 }
 
 async fn send_event(socket: &mut WebSocket, event: &OutboundEvent) -> Result<(), ()> {

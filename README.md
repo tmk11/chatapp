@@ -7,16 +7,17 @@ A WhatsApp-inspired chat application scaffold with a Rust backend designed for s
 - Rust backend using Axum and Tokio.
 - Fresh, friendly "Ripple" web frontend (light-first with automatic dark mode) served by the backend.
 - JWT-based authentication with Argon2 password hashing.
-- Durable Postgres storage (users, friendships, messages, reactions, attachments) when `DATABASE_URL` is set, with automatic migrations at startup; in-memory development stores otherwise.
+- Durable Postgres storage (users, friendships, conversations, members, messages, reactions, attachments) when `DATABASE_URL` is set, with automatic migrations at startup; in-memory development stores otherwise.
 - WhatsApp-style friend requests: add a friend by phone number, accept or decline incoming requests.
-- 1:1 real-time messaging over WebSocket between friends only.
-- Delivery and read receipts (✓ sent, ✓✓ delivered, blue ✓✓ read).
-- Typing indicators and online/offline presence with last-seen timestamps.
-- Conversation list sorted by latest activity with unread counts and message previews.
+- Unified conversations: 1:1 **direct** chats (created on demand between friends) and **group** chats (a title, an owner, add/remove members) over one WebSocket.
+- Read receipts via per-member read cursors: ✓ sent and ✓✓ read in direct chats, "👁 N" seen counts in groups; plus typing indicators and online/offline presence with last-seen.
+- Conversation list sorted by latest activity with unread counts and previews.
 - Replies (quoted messages) and emoji reactions (👍 ❤️ 😂 😮 😢 🙏).
-- Image messages: upload PNG/JPEG/GIF/WebP up to 5 MiB and send to a friend; image type is validated from magic bytes server-side.
+- Image messages and **voice messages** (record in the browser); media is validated from magic bytes server-side and readable only by conversation members.
+- **Pin** important messages (pinned bar at the top of the chat) and **search** within a conversation.
+- Profile photos: upload an avatar image; shown across the app with a colourful gradient fallback.
 - Stored conversation history that survives reconnects and, with Postgres, server restarts.
-- Message deletion: delete for me (hides the message for you) or delete for everyone (sender only, tombstones the message for both sides).
+- Message deletion: delete for me (hides the message for you) or delete for everyone (sender only, tombstones the message for all members).
 - Security middleware for HTTP headers and request-size limits.
 - Architecture and AI-agent context in [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).
 
@@ -28,7 +29,7 @@ cp .env.example .env
 cargo run
 ```
 
-Then open `http://127.0.0.1:8080/`, register or login with a phone number in E.164 format, add a friend by their phone number, wait for them to accept, and start chatting. The frontend uses the same `/auth/*`, `/friends*`, `/messages*`, `/attachments*`, `/me`, and `/ws` backend endpoints.
+Then open `http://127.0.0.1:8080/`, register or login with a phone number in E.164 format, add a friend by their phone number, then press ✎ to start a direct chat or create a group. The frontend uses the `/auth/*`, `/friends*`, `/conversations*`, `/messages/*`, `/attachments*`, `/me*`, and `/ws` backend endpoints.
 
 The backend listens on `127.0.0.1:8080` by default and serves the frontend at `http://127.0.0.1:8080/`.
 
@@ -51,18 +52,15 @@ already in place.
 The `frontend/` directory contains a static, responsive chat client ("Ripple") with a fresh, youthful design — a vibrant indigo→violet→pink brand gradient, rounded cards, colourful per-user avatars, and chat bubbles. It is light-first and automatically switches to a dark palette via `prefers-color-scheme`. On phones it collapses to a single pane with a back button between the conversation list and the open chat.
 
 - Login and registration tabs with a split-screen welcome panel.
-- Auth-first screen that hides contacts until the user is logged in.
-- Add-friend form, incoming friend-request list with accept/decline.
-- WhatsApp-style conversation list: sorted by latest activity, with online dots, message previews, timestamps, and unread badges.
-- Chat header presence line: online, last seen, or typing indicator.
-- Delivery ticks on your own messages (✓ sent, ✓✓ delivered, blue ✓✓ read); conversations are marked read when opened.
-- Reply to any message (quoted block in the bubble, Esc or ✕ to cancel) and react with 👍 ❤️ 😂 😮 😢 🙏 via the React action or by tapping existing reaction chips.
-- Session-scoped development token storage, cleared when the browser tab/session ends.
-- One WebSocket connection per session with live status.
-- Stored conversation history loaded when a friend is selected.
-- Image sending via the 📷 button; images are fetched with the auth token and rendered inline.
-- Per-message actions: reply, react, delete for me, and delete for everyone on your own messages.
-- Accessible live message log and toast feedback.
+- Add-friend form and incoming friend-request list with accept/decline.
+- Conversation list (directs + groups) sorted by latest activity, with avatars, online dots, previews, timestamps, and unread badges.
+- A ✎ "new chat" dialog to start a direct chat with a friend or create a group (title + member picker); a group-info dialog to add members or leave.
+- Chat header with presence/typing (directs) or member count (groups), a pinned-messages bar, and in-conversation search.
+- Read status on your own messages (✓ / ✓✓ in directs, "👁 N" in groups); conversations marked read when opened.
+- Reply, react (👍 ❤️ 😂 😮 😢 🙏), pin/unpin, delete-for-me and delete-for-everyone per message.
+- Image sending via 📷 and voice messages via 🎙️ (MediaRecorder); media rendered inline with an audio player.
+- Profile photo upload by tapping your own avatar.
+- Session-scoped development token storage, one WebSocket per session, accessible live log and toasts.
 
 Set `FRONTEND_DIR` if you want the backend to serve a different static asset directory.
 
@@ -118,118 +116,115 @@ curl -X POST http://127.0.0.1:8080/friends/requests/<REQUEST_ID> \
   -d '{"accept":true}'
 ```
 
+### Friends list
+
+`GET /friends` returns the caller's friends with presence (used to start
+direct chats and pick group members). The chat list itself is `/conversations`.
+
 ### Conversation list
 
 ```bash
-curl http://127.0.0.1:8080/friends \
-  -H 'authorization: Bearer <JWT>'
+curl http://127.0.0.1:8080/conversations -H 'authorization: Bearer <JWT>'
 ```
 
-Returns one entry per friend, sorted by latest activity, shaped like:
+Returns directs + groups, newest activity first. Each entry has `kind`
+(`direct`|`group`), `title` (group), `other_user` (direct), `members`
+(each with `online`), `unread_count`, and `last_message`.
 
-```json
-[
-  {
-    "user": {"id":"...","phone":"+15550002222","display_name":"Bob","last_seen_at":"...","created_at":"..."},
-    "online": true,
-    "unread_count": 2,
-    "last_message": {"id":"...","kind":"text","body":"see you soon","sent_at":"...", "...": "..."}
-  }
-]
-```
-
-### Conversation history
+### Start a direct chat / create a group
 
 ```bash
-curl http://127.0.0.1:8080/messages/<FRIEND_USER_ID> \
-  -H 'authorization: Bearer <JWT>'
+# Get or create the direct conversation with a friend:
+curl -X POST http://127.0.0.1:8080/conversations/direct \
+  -H 'authorization: Bearer <JWT>' -H 'content-type: application/json' \
+  -d '{"user_id":"<FRIEND_USER_ID>"}'
+
+# Create a group (creator becomes owner):
+curl -X POST http://127.0.0.1:8080/conversations/group \
+  -H 'authorization: Bearer <JWT>' -H 'content-type: application/json' \
+  -d '{"title":"Squad","member_ids":["<FRIEND_A>","<FRIEND_B>"]}'
 ```
 
-Returns the stored conversation oldest-first. Messages you deleted for yourself
-are omitted; messages deleted for everyone are returned with `"deleted": true`
-and an empty body.
+Group membership: `POST /conversations/{id}/members` `{"user_id":...}` adds a
+friend; `DELETE /conversations/{id}/members/{user_id}` leaves (self) or, as
+owner, removes a member.
 
-### Upload an image attachment
+### History, search, and pins
 
 ```bash
+curl http://127.0.0.1:8080/conversations/<ID>/messages -H 'authorization: Bearer <JWT>'
+curl 'http://127.0.0.1:8080/conversations/<ID>/search?q=milk' -H 'authorization: Bearer <JWT>'
+curl http://127.0.0.1:8080/conversations/<ID>/pins -H 'authorization: Bearer <JWT>'
+```
+
+History is oldest-first; messages you deleted for yourself are omitted and
+ones deleted for everyone are returned with `"deleted": true`. Search matches
+text messages case-insensitively within the conversation.
+
+### Attachments (images and voice)
+
+```bash
+# Upload raw PNG/JPEG/GIF/WebP (image) or WebM/OGG/MP4/MPEG/WAV (audio), max 10 MiB:
 curl -X POST http://127.0.0.1:8080/attachments \
-  -H 'authorization: Bearer <JWT>' \
-  -H 'content-type: image/png' \
-  --data-binary @photo.png
+  -H 'authorization: Bearer <JWT>' -H 'content-type: image/png' --data-binary @photo.png
+
+# Download (uploader, conversation members, or if it is a profile avatar):
+curl http://127.0.0.1:8080/attachments/<ATTACHMENT_ID> -H 'authorization: Bearer <JWT>' -o photo.png
 ```
 
-Accepts raw PNG, JPEG, GIF, or WebP bytes up to 5 MiB; the image type is
-detected from the file's magic bytes, not the header. Returns
-`{"id":"<ATTACHMENT_ID>","content_type":"image/png","size":...}`. The
-attachment stays private to you until you send it in a message, and can be
-used in exactly one message.
+The content type is detected from magic bytes, not the header. An attachment
+is private to its uploader until sent, and is single-use.
 
-### Download an image attachment
+### Profile avatar
 
 ```bash
-curl http://127.0.0.1:8080/attachments/<ATTACHMENT_ID> \
-  -H 'authorization: Bearer <JWT>' -o photo.png
+curl -X PUT http://127.0.0.1:8080/me/avatar \
+  -H 'authorization: Bearer <JWT>' -H 'content-type: application/json' \
+  -d '{"attachment_id":"<IMAGE_ATTACHMENT_ID>"}'
 ```
 
-Only the uploader and, after the message is sent, the recipient can download
-an attachment.
-
-### Delete a message
+### Pin and delete
 
 ```bash
-# Hide the message for yourself only (any participant):
-curl -X DELETE 'http://127.0.0.1:8080/messages/<MESSAGE_ID>?scope=me' \
-  -H 'authorization: Bearer <JWT>'
+curl -X POST http://127.0.0.1:8080/messages/<MESSAGE_ID>/pin \
+  -H 'authorization: Bearer <JWT>' -H 'content-type: application/json' -d '{"pinned":true}'
 
-# Delete for everyone (sender only); both sides see a tombstone, any image
-# attachment is purged, and connected clients receive a `message_deleted`
-# WebSocket event:
-curl -X DELETE 'http://127.0.0.1:8080/messages/<MESSAGE_ID>?scope=everyone' \
-  -H 'authorization: Bearer <JWT>'
+curl -X DELETE 'http://127.0.0.1:8080/messages/<MESSAGE_ID>?scope=me' -H 'authorization: Bearer <JWT>'
+curl -X DELETE 'http://127.0.0.1:8080/messages/<MESSAGE_ID>?scope=everyone' -H 'authorization: Bearer <JWT>'
 ```
 
 ### WebSocket
 
-Connect once per session:
-
-```text
-ws://127.0.0.1:8080/ws?token=<JWT>
-```
-
-All frames are JSON objects tagged with `type`. Client → server:
+Connect once per session: `ws://127.0.0.1:8080/ws?token=<JWT>`. All frames are
+JSON tagged with `type`. Client → server:
 
 ```json
-{"type":"message","to":"<FRIEND_USER_ID>","body":"hello","reply_to":null}
-{"type":"message","to":"<FRIEND_USER_ID>","attachment_id":"<ATTACHMENT_ID>"}
-{"type":"delivered","message_ids":["<MESSAGE_ID>"]}
-{"type":"read","peer_id":"<FRIEND_USER_ID>"}
-{"type":"typing","to":"<FRIEND_USER_ID>"}
+{"type":"message","conversation_id":"<ID>","body":"hello","reply_to":null}
+{"type":"message","conversation_id":"<ID>","kind":"image","attachment_id":"<ATT>"}
+{"type":"message","conversation_id":"<ID>","kind":"voice","attachment_id":"<ATT>","duration_ms":4200}
+{"type":"read","conversation_id":"<ID>"}
+{"type":"typing","conversation_id":"<ID>"}
 {"type":"reaction","message_id":"<MESSAGE_ID>","emoji":"👍"}
 ```
 
-- `message` carries exactly one of `body` or `attachment_id`; the optional
-  `reply_to` must reference a message in the same conversation.
-- `delivered` acks receipt of specific messages (recipient only).
-- `read` marks everything unread from `peer_id` as read and delivered.
-- `reaction` toggles one of 👍 ❤️ 😂 😮 😢 🙏 on or off.
-
-Server → client:
+`message` defaults to `kind:"text"` (carry `body`); image/voice carry an
+`attachment_id` (voice also `duration_ms`). `read` advances the caller's read
+cursor. Server → client (fanned out to conversation members):
 
 ```json
-{"type":"message","message":{"id":"...","sender_id":"...","recipient_id":"...","kind":"text","body":"hello","attachment_id":null,"reply_to":null,"reactions":[],"sent_at":"...","delivered_at":null,"read_at":null,"deleted":false}}
-{"type":"message_deleted","message_id":"...","sender_id":"...","recipient_id":"..."}
-{"type":"delivered","message_ids":["..."],"by":"<USER_ID>"}
-{"type":"read","message_ids":["..."],"by":"<USER_ID>"}
-{"type":"typing","from":"<USER_ID>"}
-{"type":"presence","user_id":"<USER_ID>","online":false,"last_seen_at":"..."}
-{"type":"reaction","message_id":"...","user_id":"...","emoji":"👍","added":true}
+{"type":"message","message":{"id":"...","conversation_id":"...","sender_id":"...","kind":"text","body":"hello","attachment_id":null,"duration_ms":null,"reply_to":null,"reactions":[],"pinned":false,"read_by":[],"sent_at":"...","deleted":false}}
+{"type":"message_deleted","conversation_id":"...","message_id":"..."}
+{"type":"message_pinned","conversation_id":"...","message_id":"...","pinned":true}
+{"type":"read","conversation_id":"...","user_id":"...","at":"..."}
+{"type":"typing","conversation_id":"...","from":"<USER_ID>"}
+{"type":"presence","user_id":"...","online":false,"last_seen_at":"..."}
+{"type":"reaction","conversation_id":"...","message_id":"...","user_id":"...","emoji":"👍","added":true}
+{"type":"conversation_updated","conversation_id":"..."}
 ```
 
-`reply_to`, when present, embeds a preview of the quoted message:
-`{"id":"...","sender_id":"...","kind":"text","body":"truncated snapshot","deleted":false}`.
-Presence events are sent to a user's friends when their first connection
-opens or their last connection closes. Messages, typing signals, and
-reactions can only be exchanged between users who are friends.
+`read_by` is the set of other members who have read the message. Presence
+events are sent to a user's friends on first-connect/last-disconnect.
+Sending, typing, and reacting require conversation membership.
 
 ## Production roadmap
 
